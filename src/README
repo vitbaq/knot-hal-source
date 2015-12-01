@@ -1,0 +1,11 @@
+	KNOT hal for systems
+
+KNOT hal is part of KNOT project. It aims to provide a driver service
+for KNOT client modules, allowing power constrained embedded device to
+interact with KONT services.
+
+The initial target platform are nRF24L01 nodes. nRF24L01 is a highly integrated,
+ultra low power (ULP) 2Mbps RF transceiver IC for the 2.4GHz ISM band. On a second
+project phase, other radio access technologies such as Bluetooth Low Energy, and
+Wi-Fi are planned.
+

@@ -1,0 +1,6 @@
+# Target: KNOT Protocol Library
+# KNOT Protocol Library is a lightweight C library built to use
+# minimal CPU and memory resources.
+INCLUDES += -I./include
+INCLUDES += -I../knot-protocol-source/src/proto-app
+INCLUDES += -I../knot-protocol-source/src/proto-net

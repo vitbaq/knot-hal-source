@@ -1,155 +1,114 @@
 /*
- * Copyright (c) 2010 by Cristian Maglie <c.maglie@arduino.cc>
- * Copyright (c) 2014 by Paul Stoffregen <paul@pjrc.com> (Transaction API)
- * Copyright (c) 2014 by Matthijs Kooijman <matthijs@stdin.nl> (SPISettings AVR)
- * Copyright (c) 2014 by Andrew J. Kroll <xxxajk@gmail.com> (atomicity fixes)
- * SPI Master library for arduino.
+ * Copyright (c) 2015, CESAR.
+ * All rights reserved.
  *
- * This file is free software; you can redistribute it and/or modify
- * it under the terms of either the GNU General Public License version 2
- * or the GNU Lesser General Public License version 2.1, both as
- * published by the Free Software Foundation.
+ * This software may be modified and distributed under the terms
+ * of the BSD license. See the LICENSE file for details.
+ *
  */
-#include "knot_spi.h"
 
-#define ARDUINO
-#ifdef ARDUINO
+#include "spi.h"
 
-#include <Arduino.h>
+#ifdef	ARDUINO
 
-static bool m_initialized = false;
-static uint8_t m_interruptMode = 0;
-static uint8_t m_interruptMask = 0;
-static uint8_t m_interruptSave = 0;
+#include <avr/io.h>
+#include <util/delay.h>
 
-uint8_t knot_spi_initialize()
+#define CSN		2
+#define MOSI	3
+#define MISO	4
+#define SCK		5
+
+#define DELAY_US	5	// CSN delay in microseconds
+
+static bool	m_init = false;
+
+void spi_init(void)
 {
-	if (initialized) {
-		return 1;
+	if(!m_init) {
+		m_init = true;
+
+		//Put CSN HIGH
+		PORTB |= (1 << CSN);
+
+		//CSN as output
+		DDRB |= (1 << CSN);
+
+		//Enable SPI and set as master
+		SPCR |= (1 << SPE) | (1 << MSTR);
+
+		//MISO as input, MOSI and SCK as output
+		DDRB &= ~(1 << MISO);
+		DDRB |= (1 << MOSI);
+		DDRB |= (1 << SCK);
+
+		//SPI mode 0
+		SPCR &= ~(1 << CPOL);
+		SPCR &= ~(1 << CPHA);
+
+		//vel fosc/16 = 1MHz
+		SPCR &= ~(1 << SPI2X);
+		SPCR &= ~(1 << SPR1);
+		SPCR |= (1 << SPR0);
 	}
-
-	initialized = true;
-
-	uint8_t sreg = SREG;
-	noInterrupts(); // Protect from a scheduler and prevent transactionBegin
-
-	// Set it high (to enable the internal pull-up resistor)
-	if(!(*portModeRegister(digitalPinToPort(SS)) & digitalPinToBitMask(SS))) {
-		digitalWrite(SS, HIGH);
-	}
-
-	pinMode(SCK, OUTPUT);
-	pinMode(MOSI, OUTPUT);
-	pinMode(SS, OUTPUT);
-
-	// Warning: if the SS pin ever becomes a LOW INPUT then SPI
-	// automatically switches to Slave, so the data direction of
-	// the SS pin MUST be kept as OUTPUT.
-	SPCR |= _BV(MSTR);
-	SPCR |= _BV(SPE);
-
-	SREG = sreg;
-
-	return 0;
 }
 
-void SPIClass::end()
+void spi_deinit(void)
 {
-	if(initialized)
-	{
-		initialized = false;
+	if(m_init) {
+		m_init = false;
 
-		uint8_t sreg = SREG;
-		noInterrupts();
+		PORTB |= (1 << CSN);
 
-		SPCR &= ~_BV(SPE);
-		m_interruptMode = 0;
-		SREG = sreg;
+		//Disable SPI and reset master
+		SPCR &= ~((1 << SPE) | (1 << MSTR));
+	}
 }
 
-#ifdef INT0
-#define INT0_MASK  (1<<INT0)
-#endif
-#ifdef INT1
-#define INT1_MASK  (1<<INT1)
-#endif
-
-void InterruptON(uint8_t intx)
+bool spi_transfer(void *ptx, len_t ltx, void *prx, len_t lrx)
 {
-	uint8_t mask = 0;
-	uint8_t sreg = SREG;
+	uint8_t* pd;
 
-	noInterrupts();
-	switch(intx) {
-	case INT0:
-		mask = 1 << INT0;
-		break;
-	case INT1:
-		mask = 1 << INT1;
-		break;
-	default:
-		interruptMode = 2;
-		break;
-	}
-	m_interruptMask |= mask;
-	if(m_interruptMode == 0) {
-		m_interruptMode = 1;
+	if(!m_init) {
+		return false;
 	}
 
-	SREG = sreg;
-}
+	PORTB &= ~(1 << CSN);
+	_delay_us(DELAY_US);
 
-void InterruptOFF(uint8_t intx)
-{
-	if (m_interruptMode != 2) {
-		uint8_t mask = 0;
-		uint8_t sreg = SREG;
-
-		noInterrupts();
-		switch(intx) {
-		case INT0:
-			mask = 1<<INT0 ;
-			break;
-		case INT1:
-			mask = 1<<INT1;
-			break;
+	if(ptx != NULL && ltx != 0) {
+		for(pd=(uint8_t*)ptx; ltx != 0; --ltx, ++pd) {
+			SPDR = *pd;
+			/*
+			 * The following NOP introduces a small delay that can prevent the wait
+			 * loop form iterating when running at the maximum speed. This gives
+			 * about 10% more speed, even if it seems counter-intuitive. At lower
+			 * speeds it is unnoticed.
+			 */
+			asm volatile("nop");
+			while(!(SPSR & (1<<SPIF)));
+			SPDR;
 		}
-		m_interruptMask &= ~mask;
-		if(m_interruptMask == 0) {
-			m_interruptMode = 0;
-		}
-
-		SREG = sreg;
 	}
+
+	if(prx != NULL && lrx != 0) {
+		for(pd=(uint8_t*)prx; lrx != 0; --lrx, ++pd) {
+			SPDR = *pd;
+			/*
+			 * The following NOP introduces a small delay that can prevent the wait
+			 * loop form iterating when running at the maximum speed. This gives
+			 * about 10% more speed, even if it seems counter-intuitive. At lower
+			 * speeds it is unnoticed.
+			 */
+			asm volatile("nop");
+			while(!(SPSR & (1<<SPIF)));
+			*pd = SPDR;
+		}
+	}
+
+	PORTB |= (1 << CSN);
+
+	return true;
 }
 
-// Set exclusive access to the SPI bus and configuring the correct settings.
-static void beginTransaction(SPISettings settings)
-{
-  if (interruptMode > 0) {
-    uint8_t sreg = SREG;
-    noInterrupts();
-
-    if (interruptMode == 1) {
-      interruptSave = EIMSK;
-      EIMSK &= ~interruptMask;
-      SREG = sreg;
-    } else
-    {
-      interruptSave = sreg;
-    }
-  }
-
-  #ifdef SPI_TRANSACTION_MISMATCH_LED
-  if (inTransactionFlag) {
-    pinMode(SPI_TRANSACTION_MISMATCH_LED, OUTPUT);
-    digitalWrite(SPI_TRANSACTION_MISMATCH_LED, HIGH);
-  }
-  inTransactionFlag = 1;
-  #endif
-
-  SPCR = settings.spcr;
-  SPSR = settings.spsr;
-}
-
-#endif
+#endif // ARDUINO
