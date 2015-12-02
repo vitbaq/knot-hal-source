@@ -11,7 +11,12 @@
 #include <stdbool.h>
 #include <string.h>
 
+#ifdef ARDUINO
 #include <avr/pgmspace.h>
+#else
+#define	PROGMEM
+#define	memcpy_P	memcpy
+#endif
 
 #ifndef	__TYPES_H__
 #define	__TYPES_H__

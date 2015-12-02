@@ -11,6 +11,7 @@
 
 #ifndef ARDUINO
 
+#include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
@@ -63,7 +64,7 @@ bool spi_transfer(void *ptx, len_t ltx, void *prx, len_t lrx)
 
 	memset(data_ioc, 0, sizeof(data_ioc));
 
-	if(txd != NULL && ltx != 0) {
+	if(ptx != NULL && ltx != 0) {
 		pdummy = (uint8_t*)malloc(ltx);
 		if(pdummy == NULL)
 			return 0;

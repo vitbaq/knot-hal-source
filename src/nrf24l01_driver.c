@@ -8,14 +8,13 @@
  */
 
 #include <abstract_driver.h>
-#include <knot_proto_net.h>
 #include <nrf24l01.h>
 
 #define NRF24_DRIVER_NAME		"nRF24l01 driver"
 
 int nrf24_probe()
 {
-	return (nrf24l01_init() == 0 ? KNOT_NET_SUCCESS : KNOT_NET_DONE);
+	return (nrf24l01_init() == 0 ? DRV_SUCCESS : DRV_DONE);
 }
 
 void nrf24_remove()
@@ -25,7 +24,7 @@ void nrf24_remove()
 
 int nrf24_socket()
 {
-	return KNOT_SOCKET_FD_INVALID;
+	return DRV_SOCKET_FD_INVALID;
 }
 
 void nrf24_close(int socket)
@@ -35,12 +34,17 @@ void nrf24_close(int socket)
 
 int nrf24_connect(int socket, uint8_t to_addr)
 {
-	return KNOT_NET_ERROR;
+	return DRV_ERROR;
 }
 
 int nrf24_accept(int socket)
 {
-	return KNOT_NET_ERROR;
+	return DRV_ERROR;
+}
+
+int nrf24_available(int sockfd)
+{
+	return 0;
 }
 
 size_t nrf24_recv (int sockfd, void *buffer, size_t len)
@@ -65,7 +69,7 @@ abstract_driver driver_nrf24 = {
 	.accept = nrf24_accept,
 	.connect = nrf24_connect,
 
-	.available = nrf24_generic_function,
+	.available = nrf24_available,
 	.recv = nrf24_recv,
 	.send = nrf24_send
 };

@@ -13,16 +13,13 @@ libexec_PROGRAMS = src/nrf24l01_driver
 
 include Makefile.modules
 
-src_knotd_SOURCES = src/nrf24l01_driver.c \
-			nrf24l01/nrf24l01.c \
-			nrf24l01/nrf24l01.h \
-			nrf24l01/nrf24l01_io.h \
-			spi/spi_linux.c	\
-			spi/spi.h \
+src_nrf24l01_driver_SOURCES = src/nrf24l01_driver.c \
+			src/nrf24l01/nrf24l01.c \
+			src/spi/spi_linux.c	\
 			$(modules_sources)
-src_knotd_LDADD = @GLIB_LIBS@ $(modules_ldadd)
-src_knotd_LDFLAGS = $(AM_LDFLAGS)
-src_knotd_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
+src_nrf24l01_driver_LDADD = @GLIB_LIBS@ $(modules_ldadd)
+src_nrf24l01_driver_LDFLAGS = $(AM_LDFLAGS)
+src_nrf24l01_driver_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
 
 DISTCLEANFILES =
 

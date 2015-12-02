@@ -31,12 +31,12 @@ extern "C"{
 
 //>>>>>>>>>>
 // TODO: functions to test, we can remove them on development end
-inline result_t nrf24l01_inr(param_t reg);
-inline void nrf24l01_inr_data(param_t reg, pparam_t pd, len_t len);
-inline void nrf24l01_outr(param_t reg, param_t value);
-inline void nrf24l01_outr_data(param_t reg, pparam_t pd, len_t len);
-inline result_t nrf24l01_comand(param_t cmd);
-inline void nrf24l01_set_address_pipe(param_t reg, param_t pipe);
+result_t nrf24l01_inr(param_t reg);
+void nrf24l01_inr_data(param_t reg, pparam_t pd, len_t len);
+void nrf24l01_outr(param_t reg, param_t value);
+void nrf24l01_outr_data(param_t reg, pparam_t pd, len_t len);
+result_t nrf24l01_comand(param_t cmd);
+void nrf24l01_set_address_pipe(param_t reg, param_t pipe);
 //<<<<<<<<<<
 
 /*

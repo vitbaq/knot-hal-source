@@ -25,7 +25,7 @@ typedef struct {
 	uint8_t	enaa,
 					en_rxaddr,
 					rx_addr,
-					rx_pw
+					rx_pw;
 } pipe_reg_t;
 static const pipe_reg_t pipe_reg[] PROGMEM = {
 	{ AA_P0, RXADDR_P0, RX_ADDR_P0, RX_PW_P0 },
@@ -53,6 +53,8 @@ static en_modes_t m_mode = NONE_MODE;
 #include <Arduino.h>
 
 #define CE	1
+
+#define DELAY(d)	delay(d)
 
 /* ----------------------------------
  * Local operation functions
@@ -85,14 +87,18 @@ static inline void io_reset()
 
 #else		// ifdef (ARDUINO)
 
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 
 #define CE	25
 
 #define LOW	0
 #define HIGH	1
+
+#define DELAY(d)	usleep(d)
 
 #ifdef RASP_MODEL_1
 
@@ -156,7 +162,7 @@ static void io_setup()
 										GPIO_BASE);
    	close(mem_fd);
    	if (gpio_map == MAP_FAILED) {
-      		printf("mmap error %d\n", (int)gpio_map);
+      		printf("mmap error\n");
       		exit(-1);
    	}
 
@@ -172,7 +178,7 @@ static void io_setup()
 static inline void io_reset()
 {
 	disable();
-	munmap(gpio, BLOCK_SIZE);
+	munmap((void*)gpio, BLOCK_SIZE);
 	spi_deinit();
 }
 
@@ -229,7 +235,7 @@ static void standby1(void)
       outr(CONFIG, config | CFG_PWR_UP);
       m_mode = STANDBY_I_MODE;
 	  // delay time to Tpd2stby timing
-      delay(5);
+      DELAY(5);
    }
 }
 
@@ -238,32 +244,32 @@ static void standby1(void)
  */
 //>>>>>>>>>>
 // TODO: functions to test, we can remove them on development end
-inline result_t nrf24l01_inr(param_t reg)
+result_t nrf24l01_inr(param_t reg)
 {
 	return inr(reg);
 }
 
-inline void nrf24l01_inr_data(param_t reg, pparam_t pd, len_t len)
+void nrf24l01_inr_data(param_t reg, pparam_t pd, len_t len)
 {
 	inr_data(reg, pd, len);
 }
 
-inline void nrf24l01_outr(param_t reg, param_t value)
+void nrf24l01_outr(param_t reg, param_t value)
 {
 	outr(reg, value);
 }
 
-inline void nrf24l01_outr_data(param_t reg, pparam_t pd, len_t len)
+void nrf24l01_outr_data(param_t reg, pparam_t pd, len_t len)
 {
 	outr_data(reg, pd, len);
 }
 
-inline result_t nrf24l01_comand(param_t cmd)
+result_t nrf24l01_comand(param_t cmd)
 {
 	return comand(cmd);
 }
 
-inline void nrf24l01_set_address_pipe(param_t reg, param_t pipe)
+void nrf24l01_set_address_pipe(param_t reg, param_t pipe)
 {
 	set_address_pipe(reg, pipe);
 }
@@ -297,7 +303,7 @@ result_t nrf24l01_init(void)
 	// Set device in power down mode
 	outr(CONFIG, inr(CONFIG) & ~CFG_PWR_UP);
 	// Delay to establish to operational timing of the nRF24L01
-	delay(5);
+	DELAY(5);
 
 	// Enable CRC 16-bit and disable all interrupts
 	value = inr(CONFIG) & ~CONFIG_MASK;

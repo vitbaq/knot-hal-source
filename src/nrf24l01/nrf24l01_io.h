@@ -141,19 +141,19 @@
 #define RX_ADDR_P0_RST	0xe7
 /* Receive address data pipe 1 (reset value: 0xc2c2c2c2c2) */
 #define RX_ADDR_P1				0x0b
-#define RX_ADDR_P0_RST	0xc2
+#define RX_ADDR_P1_RST	0xc2
 /* Receive address data pipe 2 (reset value: 0xc3) */
 #define RX_ADDR_P2				0x0c
-#define RX_ADDR_P0_RST	0xc3
+#define RX_ADDR_P2_RST	0xc3
 /* Receive address data pipe 3 (reset value: 0xc4) */
 #define RX_ADDR_P3				0x0d
-#define RX_ADDR_P0_RST	0xc4
+#define RX_ADDR_P3_RST	0xc4
 /* Receive address data pipe 4 (reset value: 0xc5) */
 #define RX_ADDR_P4				0x0e
-#define RX_ADDR_P0_RST	0xc5
+#define RX_ADDR_P4_RST	0xc5
 /* Receive address data pipe 5 (reset value: 0xc6) */
 #define RX_ADDR_P5				0x0f
-#define RX_ADDR_P0_RST	0xc6
+#define RX_ADDR_P5_RST	0xc6
 /* Transmit address (reset value: 0xe7e7e7e7e7) */
 #define TX_ADDR						0x10
 #define TX_ADDR_RST			0xe7

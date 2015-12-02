@@ -8,16 +8,12 @@
  */
 
 #include <abstract_driver.h>
-#include <knot_proto_net.h>
-#ifdef ARDUINO
-#include <Arduino.h>
-#endif
 
 #define EMPTY_DRIVER_NAME	"Empty driver"
 
 int empty_probe()
 {
-	return KNOT_NET_ERROR;
+	return DRV_ERROR;
 }
 
 void empty_remove()
@@ -27,7 +23,7 @@ void empty_remove()
 
 int empty_socket()
 {
-	return KNOT_SOCKET_FD_INVALID;
+	return DRV_SOCKET_FD_INVALID;
 }
 
 void empty_close(int socket)
@@ -37,12 +33,12 @@ void empty_close(int socket)
 
 int empty_connect(int socket, uint8_t to_addr)
 {
-	return KNOT_NET_ERROR;
+	return DRV_ERROR;
 }
 
 int empty_generic_function(int socket)
 {
-	return KNOT_NET_ERROR;
+	return DRV_ERROR;
 }
 
 size_t empty_recv (int sockfd, void *buffer, size_t len)
@@ -58,13 +54,15 @@ size_t empty_send (int sockfd, const void *buffer, size_t len)
 abstract_driver driver_empty = {
 	.name = EMPTY_DRIVER_NAME,
 	.valid = 0,
+
 	.probe = empty_probe,
 	.remove = empty_remove,
+
 	.socket = empty_socket,
 	.close = empty_close,
-	.listen = empty_generic_function,
 	.accept = empty_generic_function,
 	.connect = empty_connect,
+
 	.available = empty_generic_function,
 	.recv = empty_recv,
 	.send = empty_send

@@ -32,24 +32,6 @@ PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.28, dummy=no,
 AC_SUBST(GLIB_CFLAGS)
 AC_SUBST(GLIB_LIBS)
 
-PKG_CHECK_MODULES(CURL, libcurl,
-  [AC_DEFINE([HAVE_CURL],[1],[Use CURL])],
-  [AC_MSG_ERROR("Curl missing")])
-AC_SUBST(CURL_CFLAGS)
-AC_SUBST(CURL_LIBS)
-
-PKG_CHECK_MODULES(JSON, json-c,
-  [AC_DEFINE([HAVE_JSON],[1],[Use JSON])],
-  [AC_MSG_ERROR("json-c missing")])
-AC_SUBST(JSON_CFLAGS)
-AC_SUBST(JSON_LIBS)
-
-PKG_CHECK_MODULES(WEBSOCKETS, libwebsockets,
-  [websockets="yes", AC_DEFINE([HAVE_WEBSOCKETS],[1],[Enable websockets])],
-  [websockets="no"])
-AC_SUBST(WEBSOCKETS_CFLAGS)
-AC_SUBST(WEBSOCKETS_LIBS)
-
 AC_ARG_WITH([radioheaddir], AC_HELP_STRING([--with-radioheaddir=DIR],
 				[path to Radio Head directory]),
 					[path_radioheaddir=${withval}])
@@ -58,7 +40,6 @@ if (test "${path_radioheaddir}"); then
 	AC_DEFINE([HAVE_RADIOHEAD],[1],[Enable radio head])
 fi
 
-AM_CONDITIONAL(WEBSOCKETS, (test "${websockets}" != "no"))
 AM_CONDITIONAL(RADIOHEAD, test "${path_radioheaddir}")
 
 AC_OUTPUT(Makefile)

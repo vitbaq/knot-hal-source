@@ -6,13 +6,21 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
+#include <stdint.h>
+#include <stddef.h>
+//#include <stdbool.h>
+//#include <string.h>
 
 #ifndef ABSTRACT_DRIVER_H
 #define ABSTRACT_DRIVER_H
 
-#ifdef ARDUINO
-#include <Arduino.h>
-#endif
+// invalid socket fd
+#define DRV_SOCKET_FD_INVALID		-1
+
+// net layer return codes
+#define DRV_DONE				1
+#define DRV_SUCCESS		0
+#define DRV_ERROR			-1
 
  /**
  * struct abstract_driver - driver abstraction for the physical layer
@@ -31,6 +39,7 @@
 typedef struct {
 	const char *name;
 	const uint8_t valid;
+
 	int (*probe) (void);
 	void (*remove) (void);
 
@@ -39,12 +48,13 @@ typedef struct {
 	int (*listen) (int srv_sockfd);
 	int (*accept) (int srv_sockfd);
 	int (*connect) (int cli_sockfd, uint8_t to_addr);
+
 	int (*available) (int sockfd);
 	size_t (*recv) (int sockfd, void *buffer, size_t len);
 	size_t (*send) (int sockfd, const void *buffer, size_t len);
 } abstract_driver;
 
-extern abstract_driver driver_empty;
-extern abstract_driver *drivers[];
+//extern abstract_driver driver_empty;
+//extern abstract_driver *drivers[];
 
 #endif // ABSTRACT_DRIVER_H
