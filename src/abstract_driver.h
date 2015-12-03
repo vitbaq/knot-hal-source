@@ -8,11 +8,9 @@
  */
 #include <stdint.h>
 #include <stddef.h>
-//#include <stdbool.h>
-//#include <string.h>
 
-#ifndef ABSTRACT_DRIVER_H
-#define ABSTRACT_DRIVER_H
+#ifndef __ABSTRACT_DRIVER_H__
+#define __ABSTRACT_DRIVER_H__
 
 // invalid socket fd
 #define DRV_SOCKET_FD_INVALID		-1
@@ -21,6 +19,10 @@
 #define DRV_DONE				1
 #define DRV_SUCCESS		0
 #define DRV_ERROR			-1
+
+#ifdef __cplusplus
+extern "C"{
+#endif
 
  /**
  * struct abstract_driver - driver abstraction for the physical layer
@@ -47,14 +49,17 @@ typedef struct {
 	void (*close) (int sockfd);
 	int (*listen) (int srv_sockfd);
 	int (*accept) (int srv_sockfd);
-	int (*connect) (int cli_sockfd, uint8_t to_addr);
+	int (*connect) (int cli_sockfd, const void *addr, size_t len);
 
 	int (*available) (int sockfd);
 	size_t (*recv) (int sockfd, void *buffer, size_t len);
 	size_t (*send) (int sockfd, const void *buffer, size_t len);
-} abstract_driver;
+} abstract_driver_t;
 
-//extern abstract_driver driver_empty;
-//extern abstract_driver *drivers[];
+extern abstract_driver_t driver;
 
-#endif // ABSTRACT_DRIVER_H
+#ifdef __cplusplus
+} // extern "C"
+#endif
+
+#endif // __ABSTRACT_DRIVER_H__

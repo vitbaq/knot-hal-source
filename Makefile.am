@@ -1,25 +1,14 @@
-AM_MAKEFLAGS = --no-print-directory
+SUBDIRS = src
 
-include_HEADERS =
-modules_sources =
-modules_ldadd =
-modules_cflags =
-INCLUDES =
+bin_PROGRAMS = testcpp testc
 
-AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
-AM_LDFLAGS = $(BUILD_LDFLAGS)
+testcpp_SOURCES = test.cpp
+testcpp_LDADD = src/libnrf24l01_driver.a
+testcpp_CPPFLAGS =
 
-libexec_PROGRAMS = src/nrf24l01_driver
-
-include Makefile.modules
-
-src_nrf24l01_driver_SOURCES = src/nrf24l01_driver.c \
-			src/nrf24l01/nrf24l01.c \
-			src/spi/spi_linux.c	\
-			$(modules_sources)
-src_nrf24l01_driver_LDADD = @GLIB_LIBS@ $(modules_ldadd)
-src_nrf24l01_driver_LDFLAGS = $(AM_LDFLAGS)
-src_nrf24l01_driver_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
+testc_SOURCES = test.c
+testc_LDADD = src/libabstract_driver.a
+testc_CPPFLAGS =
 
 DISTCLEANFILES =
 
@@ -28,4 +17,4 @@ MAINTAINERCLEANFILES = Makefile.in \
 	ltmain.sh depcomp compile missing install-sh
 
 clean-local:
-	$(RM) -r src/nrf24l01_driver
+	$(RM) -r testcpp testc

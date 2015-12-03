@@ -7,8 +7,8 @@
  *
  */
 
-#include <abstract_driver.h>
-#include <nrf24l01.h>
+#include "abstract_driver.h"
+#include "nrf24l01/nrf24l01.h"
 
 #define NRF24_DRIVER_NAME		"nRF24l01 driver"
 
@@ -32,7 +32,7 @@ void nrf24_close(int socket)
 
 }
 
-int nrf24_connect(int socket, uint8_t to_addr)
+int nrf24_connect(int socket, const void *addr, size_t len)
 {
 	return DRV_ERROR;
 }
@@ -44,7 +44,7 @@ int nrf24_accept(int socket)
 
 int nrf24_available(int sockfd)
 {
-	return 0;
+	return DRV_ERROR;
 }
 
 size_t nrf24_recv (int sockfd, void *buffer, size_t len)
@@ -57,7 +57,7 @@ size_t nrf24_send (int sockfd, const void *buffer, size_t len)
 	return 0;
 }
 
-abstract_driver driver_nrf24 = {
+abstract_driver_t driver = {
 	.name = NRF24_DRIVER_NAME,
 	.valid = 1,
 

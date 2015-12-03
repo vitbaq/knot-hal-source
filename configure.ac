@@ -1,45 +1,48 @@
-AC_PREREQ(2.60)
-AC_INIT(knot, 0.01)
+## Process this file to produce a configure script:
+##  autoreconf -i
+##
 
-AM_INIT_AUTOMAKE([silent-rules subdir-objects])
+## Preamble - used to set up meta paths, meta-information, etc.
+# require a minimum version of AutoConf
+AC_PREREQ([2.65])
 
-AC_CONFIG_HEADERS(config.h)
+# software name, version, contact address
+AC_INIT([knot_lib_drivers],[1.0.0])
 
-m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+# if this file does not exist, `configure` was invoked in the wrong directory
+AC_CONFIG_SRCDIR([src/abstract_driver.c])
 
+# directories (relative to top-level) to look into for AutoConf/AutoMake files
+AC_CONFIG_AUX_DIR([build-aux])
+AC_CONFIG_MACRO_DIR([build-aux])
+# enable AutoMake
+AM_INIT_AUTOMAKE([1.10])
 AM_MAINTAINER_MODE
+# all defined C macros (HAVE_*) will be saved to this file
+AC_CONFIG_HEADERS([config.h])
 
-AC_PREFIX_DEFAULT(/usr/local)
-
-PKG_PROG_PKG_CONFIG
-
-COMPILER_WARNING_CFLAGS
-COMPILER_BUILD_CFLAGS
-
-AC_LANG_C
-
+# Macros for the compilers. 
+# This macro checks if you have a C compiler
 AC_PROG_CC
-AC_PROG_CC_PIE
+AM_PROG_CC_C_O
 
-m4_define([_LT_AC_TAGCONFIG], [])
-m4_ifdef([AC_LIBTOOL_TAGS], [AC_LIBTOOL_TAGS([])])
+# Check if you have a C++ compiler
+AC_PROG_CXX
+AC_PROG_CXX_C_O
 
-AC_DISABLE_STATIC
-AC_PROG_LIBTOOL
+# Check if the `install` program is present
+AC_PROG_INSTALL
 
-PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.28, dummy=no,
-				AC_MSG_ERROR(required glib >= 2.28))
-AC_SUBST(GLIB_CFLAGS)
-AC_SUBST(GLIB_LIBS)
+## Initialize GNU LibTool
+LT_INIT([static])
 
-AC_ARG_WITH([radioheaddir], AC_HELP_STRING([--with-radioheaddir=DIR],
-				[path to Radio Head directory]),
-					[path_radioheaddir=${withval}])
-if (test "${path_radioheaddir}"); then
-	AC_SUBST(RADIOHEADDIR, [${path_radioheaddir}])
-	AC_DEFINE([HAVE_RADIOHEAD],[1],[Enable radio head])
-fi
+# Checks for header files.
+AC_CHECK_HEADERS([stdint.h stddef.h string.h])
+# Checks for typedefs, structures, and compiler characteristics.
+AC_TYPE_SIZE_T
 
-AM_CONDITIONAL(RADIOHEAD, test "${path_radioheaddir}")
-
-AC_OUTPUT(Makefile)
+# Substitute all conditionals in these files; this is normally used to
+# create `Makefile`s but could also be used for scripts, include
+# files, etc.
+AC_CONFIG_FILES([Makefile src/Makefile])
+AC_OUTPUT
