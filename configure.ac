@@ -13,8 +13,8 @@ AC_INIT([knot_lib_drivers],[1.0.0])
 AC_CONFIG_SRCDIR([src/abstract_driver.c])
 
 # directories (relative to top-level) to look into for AutoConf/AutoMake files
-AC_CONFIG_AUX_DIR([build-aux])
-AC_CONFIG_MACRO_DIR([build-aux])
+#AC_CONFIG_AUX_DIR([build-aux])
+#AC_CONFIG_MACRO_DIR([build-aux])
 # enable AutoMake
 AM_INIT_AUTOMAKE([1.10])
 AM_MAINTAINER_MODE
