@@ -6,7 +6,7 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-#include "../types.h"
+#include "types.h"
 
 #ifndef __SPI_H__
 #define __SPI_H__
