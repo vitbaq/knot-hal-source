@@ -1,4 +1,7 @@
 #!/bin/sh
 
-autoreconf -i
-
+aclocal && \
+    autoheader && \
+	libtoolize --automake --copy --force && \
+	    automake --add-missing --copy && \
+		autoconf

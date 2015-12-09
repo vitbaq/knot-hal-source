@@ -6,7 +6,7 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-#include "../types.h"
+#include "types.h"
 #include "nrf24l01_io.h"
 
 #ifndef __NRF24L01_H__

@@ -8,7 +8,7 @@
  */
 
 #include "abstract_driver.h"
-#include "nrf24l01/nrf24l01.h"
+#include "nrf24l01.h"
 
 #define NRF24_DRIVER_NAME		"nRF24l01 driver"
 

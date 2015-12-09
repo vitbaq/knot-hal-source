@@ -1,6 +1,5 @@
 ## Process this file to produce a configure script:
-##  autoreconf -i
-##
+## ./bootstrap-configure
 
 ## Preamble - used to set up meta paths, meta-information, etc.
 # require a minimum version of AutoConf
@@ -13,8 +12,8 @@ AC_INIT([knot_lib_drivers],[1.0.0])
 AC_CONFIG_SRCDIR([src/abstract_driver.c])
 
 # directories (relative to top-level) to look into for AutoConf/AutoMake files
-AC_CONFIG_AUX_DIR([build-aux])
-AC_CONFIG_MACRO_DIR([build-aux])
+#AC_CONFIG_AUX_DIR([build-aux])
+#AC_CONFIG_MACRO_DIR([build-aux])
 # enable AutoMake
 AM_INIT_AUTOMAKE([1.10])
 AM_MAINTAINER_MODE
@@ -44,5 +43,8 @@ AC_TYPE_SIZE_T
 # Substitute all conditionals in these files; this is normally used to
 # create `Makefile`s but could also be used for scripts, include
 # files, etc.
-AC_CONFIG_FILES([Makefile src/Makefile])
+AC_CONFIG_FILES([Makefile
+										src/Makefile
+										src/nrf24l01/Makefile
+										src/spi/Makefile])
 AC_OUTPUT

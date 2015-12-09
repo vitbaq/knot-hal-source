@@ -7,7 +7,7 @@
 *
 */
 #include "nrf24l01.h"
-#include "../spi/spi.h"
+#include "spi.h"
 
 // Alias for spi_transfer function of the SPI module
 #define rf_io		spi_transfer
