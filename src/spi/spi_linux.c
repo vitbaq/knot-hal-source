@@ -31,11 +31,11 @@ void spi_init(void)
 	unsigned char mode = SPI_MODE_0;
 
 	if(m_spi_fd < 0) {
-//#ifdef RASPBERRY
+#ifdef RASPBERRY
 		m_spi_fd = open("/dev/spidev0.0", O_RDWR);
-//#else
-//		m_spi_fd = open("/dev/spidev5.1", O_RDWR);
-//#endif
+#else
+		m_spi_fd = open("/dev/spidev5.1", O_RDWR);
+#endif
 		if(m_spi_fd > 0) {
 			ioctl(m_spi_fd, SPI_IOC_WR_MODE, &mode);
 			ioctl(m_spi_fd, SPI_IOC_RD_MODE, &mode);

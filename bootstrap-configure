@@ -5,7 +5,5 @@ if [ -f config.status ]; then
 fi
 
 ./bootstrap && \
-    ./configure --enable-maintainer-mode \
-		--enable-debug \
-		--prefix=/usr \
-		--sysconfdir=/etc $*
+    ./configure CFLAGS='-DRASPBERRY' \
+		--enable-debug
