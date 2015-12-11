@@ -1,0 +1,16 @@
+#!/bin/sh
+# copy files source to buildroot to the fast compile
+
+if [ ! -n "$1" ]; then
+    echo "No input ID commit at '\$1'."
+	exit 1
+fi
+
+cp test.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
+cp test.cpp ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
+cp src/nrf24l01_driver.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src
+cp src/abstract_driver.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src
+cp src/nrf24l01/nrf24l01.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
+cp src/nrf24l01/nrf24l01.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
+cp src/nrf24l01/nrf24l01_io.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
+cp src/nrf24l01/nrf24l01.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01

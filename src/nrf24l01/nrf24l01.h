@@ -25,6 +25,11 @@
 #define PIPE_MIN				0									// pipe min
 #define PIPE_MAX				5									// pipe max
 
+// operation status codes
+#define NRF24l01_DONE				1
+#define NRF24l01_SUCCESS		0
+#define NRF24l01_ERROR			-1
+
 #ifdef __cplusplus
 extern "C"{
 #endif
@@ -50,9 +55,9 @@ void		nrf24l01_set_channel(param_t ch);
 
 result_t	nrf24l01_get_channel(void);
 
-void		nrf24l01_open_pipe(param_t pipe);
+result_t 		nrf24l01_open_pipe(param_t pipe);
 
-void		nrf24l01_close_pipe(param_t pipe);
+result_t 		nrf24l01_close_pipe(param_t pipe);
 
 #ifdef __cplusplus
 } // extern "C"

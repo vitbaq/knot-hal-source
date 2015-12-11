@@ -15,9 +15,7 @@ int main(void)
 	 long unsigned int b32[2];
 	} v;
 
-	cout << "Hello C++ World!"  << std::endl;
-	cout << "This is " << PACKAGE_STRING << std::endl;
-	cout << "Driver name: " << nrf24l01_driver.name << std::endl;
+	cout << "TestCpp - Driver name: " << nrf24l01_driver.name << std::endl;
 
 	v.b64 = 0;
 
@@ -82,6 +80,7 @@ int main(void)
 
 	nrf24l01_deinit();
 	nrf24l01_init();
+
 	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_comand(NOP));
 	printf("RX: EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));
 	nrf24l01_open_pipe(0);
@@ -138,6 +137,8 @@ int main(void)
 	printf("RX: PIPE1 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(0);
 	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+
+	nrf24l01_deinit();
 
 	return 0;
 }

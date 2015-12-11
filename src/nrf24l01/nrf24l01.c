@@ -280,7 +280,7 @@ result_t nrf24l01_deinit(void)
 	result_t	value;
 
 	if(m_mode == NONE_MODE || m_mode == POWER_DOWN_MODE)
-		return 1;
+		return NRF24l01_DONE;
 
 	m_mode = POWER_DOWN_MODE;
 
@@ -288,7 +288,7 @@ result_t nrf24l01_deinit(void)
 	outr(CONFIG, inr(CONFIG) & ~CFG_PWR_UP);
 
 	io_reset();
-	return 0;
+	return NRF24l01_SUCCESS;
 }
 
 result_t nrf24l01_init(void)
@@ -296,7 +296,7 @@ result_t nrf24l01_init(void)
 	result_t	value;
 
 	if(m_mode != NONE_MODE && m_mode != POWER_DOWN_MODE)
-		return 1;
+		return NRF24l01_DONE;
 
 	io_setup();
 
@@ -353,7 +353,7 @@ result_t nrf24l01_init(void)
 	// Set device in standby-I mode
 	standby1();
 
-	return 0;
+	return NRF24l01_SUCCESS;
 }
 
 void nrf24l01_set_channel(param_t ch)
@@ -369,12 +369,12 @@ result_t nrf24l01_get_channel(void)
 	return inr(RF_CH);
 }
 
-void nrf24l01_open_pipe(param_t pipe)
+result_t nrf24l01_open_pipe(param_t pipe)
 {
 	pipe_reg_t rpipe;
 
 	if(pipe > PIPE_MAX) {
-		return;
+		return NRF24l01_ERROR;
 	}
 
 	memcpy_P(&rpipe, &pipe_reg[pipe], sizeof(pipe_reg_t));
@@ -390,14 +390,15 @@ void nrf24l01_open_pipe(param_t pipe)
 		}
 #endif
 	}
+	return NRF24l01_SUCCESS;
 }
 
-void nrf24l01_close_pipe(param_t pipe)
+result_t nrf24l01_close_pipe(param_t pipe)
 {
 	pipe_reg_t rpipe;
 
 	if(pipe > PIPE_MAX) {
-		return;
+		return NRF24l01_ERROR;
 	}
 
 	memcpy_P(&rpipe, &pipe_reg[pipe], sizeof(pipe_reg_t));
@@ -408,5 +409,5 @@ void nrf24l01_close_pipe(param_t pipe)
 		outr(EN_AA, inr(EN_AA) & ~rpipe.enaa);
 #endif
 	}
+	return NRF24l01_SUCCESS;
 }
-

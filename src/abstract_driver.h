@@ -15,7 +15,7 @@
 // invalid socket fd
 #define DRV_SOCKET_FD_INVALID		-1
 
-// net layer return codes
+// operation status codes
 #define DRV_DONE				1
 #define DRV_SUCCESS		0
 #define DRV_ERROR			-1
