@@ -15,9 +15,9 @@ int main(void)
 	 long unsigned int b32[2];
 	} v;
 
-	cout << "Hello C++ World! Testcpp make buildroot"  << std::endl;
+	cout << "Hello C++ World!"  << std::endl;
 	cout << "This is " << PACKAGE_STRING << std::endl;
-	cout << "Driver name=" << driver.name << std::endl;
+	cout << "Driver name: " << nrf24l01_driver.name << std::endl;
 
 	v.b64 = 0;
 

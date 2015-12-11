@@ -57,7 +57,7 @@ size_t nrf24_send (int sockfd, const void *buffer, size_t len)
 	return 0;
 }
 
-abstract_driver_t driver = {
+abstract_driver_t nrf24l01_driver = {
 	.name = NRF24_DRIVER_NAME,
 	.valid = 1,
 

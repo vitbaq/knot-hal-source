@@ -54,7 +54,7 @@ size_t empty_send (int sockfd, const void *buffer, size_t len)
 	return 0;
 }
 
-abstract_driver_t driver = {
+abstract_driver_t abstract_driver = {
 	.name = EMPTY_DRIVER_NAME,
 	.valid = 0,
 

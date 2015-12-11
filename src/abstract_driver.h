@@ -56,7 +56,8 @@ typedef struct {
 	size_t (*send) (int sockfd, const void *buffer, size_t len);
 } abstract_driver_t;
 
-extern abstract_driver_t driver;
+extern abstract_driver_t abstract_driver;
+extern abstract_driver_t nrf24l01_driver;
 
 #ifdef __cplusplus
 } // extern "C"
