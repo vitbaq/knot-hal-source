@@ -506,15 +506,11 @@ result_t nrf24l01_set_ptx(param_t pipe)
 
 result_t nrf24l01_ptx_data(pparam_t pdata, len_t len, bool ack)
 {
-	if (m_mode != TX_MODE) {
+	if (m_mode != TX_MODE || pdata == NULL || len == 0 || len > NRF24L01_PAYLOAD_SIZE) {
 		return ERROR;
 	}
 
 	outr(STATUS, ST_TX_DS | ST_MAX_RT);
-
-	if (pdata == NULL || len == 0 || len > NRF24L01_PAYLOAD_SIZE) {
-		return ERROR;
-	}
 
 	return command_data(!ack ? W_TX_PAYLOAD_NO_ACK : W_TX_PAYLOAD, pdata, len);
 }
