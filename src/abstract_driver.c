@@ -11,56 +11,57 @@
 
 #define EMPTY_DRIVER_NAME	"Empty driver"
 
-int empty_probe()
+/*
+ * HAL functions
+ */
+static int empty_socket()
 {
-	return DRV_ERROR;
+	return SOCKET_INVALID;
 }
 
-void empty_remove()
+static int empty_close(int socket)
 {
+	return SOCKET_INVALID;
 }
 
-int empty_socket()
+static int empty_connect(int socket, const void *addr, size_t len)
 {
-	return DRV_SOCKET_FD_INVALID;
+	return AD_ERROR;
 }
 
-void empty_close(int socket)
+static int empty_accept(int socket)
 {
+	return AD_ERROR;
 }
 
-int empty_connect(int socket, const void *addr, size_t len)
+static int empty_available(int sockfd)
 {
-	return DRV_ERROR;
+	return AD_ERROR;
 }
 
-int empty_accept(int socket)
-{
-	return DRV_ERROR;
-}
-
-int empty_available(int sockfd)
-{
-	return DRV_ERROR;
-}
-
-size_t empty_recv (int sockfd, void *buffer, size_t len)
+static size_t empty_recv (int sockfd, void *buffer, size_t len)
 {
 	return 0;
 }
 
-size_t empty_send (int sockfd, const void *buffer, size_t len)
+static size_t empty_send (int sockfd, const void *buffer, size_t len)
 {
 	return 0;
 }
 
+static int empty_probe()
+{
+	return AD_ERROR;
+}
+
+static void empty_remove()
+{
+}
+
+/*
+ * HAL interface
+ */
 abstract_driver_t abstract_driver = {
-	.name = EMPTY_DRIVER_NAME,
-	.valid = 0,
-
-	.probe = empty_probe,
-	.remove = empty_remove,
-
 	.socket = empty_socket,
 	.close = empty_close,
 	.accept = empty_accept,
@@ -68,5 +69,9 @@ abstract_driver_t abstract_driver = {
 
 	.available = empty_available,
 	.recv = empty_recv,
-	.send = empty_send
+	.send = empty_send,
+
+	.name = EMPTY_DRIVER_NAME,
+	.probe = empty_probe,
+	.remove = empty_remove
 };

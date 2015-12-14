@@ -5,5 +5,5 @@ if [ -f config.status ]; then
 fi
 
 ./bootstrap && \
-    ./configure CFLAGS='-DRASPBERRY' \
+    ./configure CFLAGS='-DRPI2_BOARD' \
 		--enable-debug

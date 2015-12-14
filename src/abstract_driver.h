@@ -8,17 +8,17 @@
  */
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 
 #ifndef __ABSTRACT_DRIVER_H__
 #define __ABSTRACT_DRIVER_H__
 
 // invalid socket fd
-#define DRV_SOCKET_FD_INVALID		-1
+#define SOCKET_INVALID		-1
 
 // operation status codes
-#define DRV_DONE				1
-#define DRV_SUCCESS		0
-#define DRV_ERROR			-1
+#define AD_SUCCESS		0
+#define AD_ERROR			-1
 
 #ifdef __cplusplus
 extern "C"{
@@ -39,21 +39,18 @@ extern "C"{
  */
 
 typedef struct {
-	const char *name;
-	const uint8_t valid;
-
-	int (*probe) (void);
-	void (*remove) (void);
-
 	int (*socket) (void);
-	void (*close) (int sockfd);
-	int (*listen) (int srv_sockfd);
+	int (*close) (int sockfd);
 	int (*accept) (int srv_sockfd);
 	int (*connect) (int cli_sockfd, const void *addr, size_t len);
 
 	int (*available) (int sockfd);
 	size_t (*recv) (int sockfd, void *buffer, size_t len);
 	size_t (*send) (int sockfd, const void *buffer, size_t len);
+
+	const char *name;
+	int (*probe) (void);
+	void (*remove) (void);
 } abstract_driver_t;
 
 extern abstract_driver_t abstract_driver;

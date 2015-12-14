@@ -6,11 +6,12 @@ if [ ! -n "$1" ]; then
 	exit 1
 fi
 
-cp test.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
-cp test.cpp ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
-cp src/nrf24l01_driver.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src
-cp src/abstract_driver.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src
-cp src/nrf24l01/nrf24l01.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
-cp src/nrf24l01/nrf24l01.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
-cp src/nrf24l01/nrf24l01_io.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
-cp src/nrf24l01/nrf24l01.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
+cp *.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
+cp *.cpp ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
+cp *.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
+cp src/*.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src
+cp src/*.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src
+cp src/nrf24l01/*.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
+cp src/nrf24l01/*.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
+cp src/spi/*.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/spi
+cp src/spi/*.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/spi

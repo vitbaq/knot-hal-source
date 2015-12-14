@@ -6,64 +6,104 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
+#include <stdio.h>
 
 #include "abstract_driver.h"
+#include "nrf24l01_proto_net.h"
 #include "nrf24l01.h"
 
-#define NRF24_DRIVER_NAME		"nRF24l01 driver"
+#define NRF24_DRIVER_NAME		"nRF24L01 driver"
 
-int nrf24_probe()
+static bool m_binit = false;
+static int m_sockfd = SOCKET_INVALID;
+
+/*
+ * HAL functions
+ */
+static int nrf24_socket()
 {
-	return (nrf24l01_init() == 0 ? DRV_SUCCESS : DRV_DONE);
+	if (!m_binit || m_sockfd != SOCKET_INVALID)
+		return AD_ERROR;
+
+	m_sockfd = 0;
+	return m_sockfd;
 }
 
-void nrf24_remove()
+static int nrf24_close(int socket)
 {
-	nrf24l01_deinit();
+	if (socket != m_sockfd)
+		return AD_ERROR;
+
+	m_sockfd = SOCKET_INVALID;
+	return AD_SUCCESS;
 }
 
-int nrf24_socket()
+static int nrf24_connect(int socket, const void *addr, size_t len)
 {
-	return DRV_SOCKET_FD_INVALID;
+	if (socket == SOCKET_INVALID || socket != m_sockfd)
+		return AD_ERROR;
+
+	return AD_ERROR;
 }
 
-void nrf24_close(int socket)
+static int nrf24_accept(int socket)
 {
+#ifndef ARDUINO
+	if (socket == SOCKET_INVALID || socket != m_sockfd)
+		return AD_ERROR;
 
+	return AD_ERROR;
+#else
+	return AD_ERROR;
+#endif
 }
 
-int nrf24_connect(int socket, const void *addr, size_t len)
+static int nrf24_available(int socket)
 {
-	return DRV_ERROR;
+	if (socket == SOCKET_INVALID)
+		return AD_ERROR;
+
+	return AD_SUCCESS;
 }
 
-int nrf24_accept(int socket)
+static size_t nrf24_recv (int socket, void *buffer, size_t len)
 {
-	return DRV_ERROR;
-}
+	if (socket == SOCKET_INVALID)
+		return AD_ERROR;
 
-int nrf24_available(int sockfd)
-{
-	return DRV_ERROR;
-}
-
-size_t nrf24_recv (int sockfd, void *buffer, size_t len)
-{
 	return 0;
 }
 
-size_t nrf24_send (int sockfd, const void *buffer, size_t len)
+static size_t nrf24_send (int socket, const void *buffer, size_t len)
 {
+	if (socket == SOCKET_INVALID)
+		return AD_ERROR;
+
 	return 0;
 }
 
+static int nrf24_probe()
+{
+	nrf24_payload pld;
+	printf("sizeof(nrf24_payload)=%d pld.data[%d] size=%d\n", (int)sizeof(pld), (int)(pld.msg.data-(uint8_t*)&pld), (int)NRF24_MSG_PW_SIZE);
+
+	m_binit = (nrf24l01_init() != AD_ERROR);
+	return (m_binit ? AD_SUCCESS : AD_ERROR);
+}
+
+static void nrf24_remove()
+{
+	if (m_binit) {
+		m_binit = false;
+		nrf24_close(m_sockfd);
+		nrf24l01_deinit();
+	}
+}
+
+/*
+ * HAL interface
+ */
 abstract_driver_t nrf24l01_driver = {
-	.name = NRF24_DRIVER_NAME,
-	.valid = 1,
-
-	.probe = nrf24_probe,
-	.remove = nrf24_remove,
-
 	.socket = nrf24_socket,
 	.close = nrf24_close,
 	.accept = nrf24_accept,
@@ -71,5 +111,9 @@ abstract_driver_t nrf24l01_driver = {
 
 	.available = nrf24_available,
 	.recv = nrf24_recv,
-	.send = nrf24_send
+	.send = nrf24_send,
+
+	.name = NRF24_DRIVER_NAME,
+	.probe = nrf24_probe,
+	.remove = nrf24_remove
 };

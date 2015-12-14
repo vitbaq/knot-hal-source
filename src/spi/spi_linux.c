@@ -31,10 +31,11 @@ void spi_init(void)
 	unsigned char mode = SPI_MODE_0;
 
 	if(m_spi_fd < 0) {
-#ifdef RASPBERRY
+#if defined(RPI_BOARD) || defined(RPI2_BOARD)
 		m_spi_fd = open("/dev/spidev0.0", O_RDWR);
 #else
-		m_spi_fd = open("/dev/spidev5.1", O_RDWR);
+		//m_spi_fd = open("/dev/spidev5.1", O_RDWR);
+		#error Set correct device name to open SPI device.
 #endif
 		if(m_spi_fd > 0) {
 			ioctl(m_spi_fd, SPI_IOC_WR_MODE, &mode);

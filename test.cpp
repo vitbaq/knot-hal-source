@@ -1,11 +1,47 @@
 #include <iostream>
 #include <stdio.h>
+#include <memory>
+#include <list>
 
 #include "config.h"
 #include "abstract_driver.h"
 #include "src/nrf24l01/nrf24l01.h"
 
 using namespace std;
+
+class CPipe {
+    //! Pipe ID
+    int m_pipe;
+   public:
+    /**
+     * \brief Pipe constructor.
+     * \param value     Pipe value.
+     */
+    CPipe(int pipe = 0) : m_pipe(pipe)
+    {
+    }
+
+    /**
+     * \brief Gets current Pipe ID.
+     * \return Pipe value.
+     */
+    int getPipe(void) const
+    {
+        return m_pipe;
+    }
+};
+
+#define pipe_sp shared_ptr<CPipe>
+list<pipe_sp> m_listPipe;
+
+list<pipe_sp>::iterator find(int value) {
+    list<pipe_sp>::iterator it;
+
+    for (it = m_listPipe.begin(); it != m_listPipe.end() && (*it)->getPipe() != value; ++it)
+        ;
+
+    return it;
+}
 
 int main(void)
 {
@@ -19,9 +55,27 @@ int main(void)
 
 	v.b64 = 0;
 
-	nrf24l01_init();
+    if (find(123) == m_listPipe.end()) {
+        CPipe *pp = new (std::nothrow) CPipe(123);
+        if (pp != NULL) {
+        	m_listPipe.push_back(pipe_sp(pp));
+		}
+    }
+	list<pipe_sp>::iterator it = find(123);
+	if (it != m_listPipe.end())
+		printf("Find pipe(123) = %d\n", (*it)->getPipe());
+	else
+		printf("Find pipe(123) not found\n");
+	m_listPipe.erase(it);
+	it = find(123);
+	if (it != m_listPipe.end())
+		printf("Find pipe(123) = %d\n", (*it)->getPipe());
+	else
+		printf("Find pipe(123) not found\n");
 
-	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_comand(NOP));
+	nrf24l01_driver.probe();
+
+	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_command(NOP));
 	printf("RX: EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));
 	nrf24l01_open_pipe(0);
 	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
@@ -78,10 +132,10 @@ int main(void)
 	nrf24l01_close_pipe(0);
 	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 
-	nrf24l01_deinit();
-	nrf24l01_init();
+	nrf24l01_driver.remove();
+	nrf24l01_driver.probe();
 
-	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_comand(NOP));
+	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_command(NOP));
 	printf("RX: EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));
 	nrf24l01_open_pipe(0);
 	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
@@ -138,7 +192,7 @@ int main(void)
 	nrf24l01_close_pipe(0);
 	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 
-	nrf24l01_deinit();
+	nrf24l01_driver.remove();
 
 	return 0;
 }

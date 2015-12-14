@@ -19,6 +19,12 @@
 // data word size
 #define DATA_SIZE	sizeof(uint8_t)
 
+// time delay in microseconds (us)
+#define TPD2STBY			5000		//5ms
+#define THCE					10			//10us
+#define TPECE2CSN		4				//4us
+#define TSTBY2A			130			//130us
+
 // *************heartbeat*************
 
 typedef struct {
@@ -27,6 +33,7 @@ typedef struct {
 					rx_addr,
 					rx_pw;
 } pipe_reg_t;
+
 static const pipe_reg_t pipe_reg[] PROGMEM = {
 	{ AA_P0, RXADDR_P0, RX_ADDR_P0, RX_PW_P0 },
 	{ AA_P1, RXADDR_P1, RX_ADDR_P1, RX_PW_P1 },
@@ -37,24 +44,23 @@ static const pipe_reg_t pipe_reg[] PROGMEM = {
 };
 
 typedef enum {
-	NONE_MODE,
+	UNKNOWN_MODE,
+	POWER_DOWN_MODE,
+	STANDBY_I_MODE,
 	RX_MODE,
 	TX_MODE,
 	STANDBY_II_MODE,
-	STANDBY_I_MODE,
-	UNKOWN_MODE,
-	POWER_DOWN_MODE,
 } en_modes_t ;
-static en_modes_t m_mode = NONE_MODE;
 
-//uint32_t m_txRxDelay; /**< Var for adjusting delays depending on datarate */
+static en_modes_t m_mode = UNKNOWN_MODE;
 
 #ifdef ARDUINO
 #include <Arduino.h>
 
 #define CE	1
 
-#define DELAY(d)	delay(d)
+#define DELAY_US(us)		delayMicroseconds(us)
+#define DELAY_MS(ms)	delay(ms)
 
 /* ----------------------------------
  * Local operation functions
@@ -98,16 +104,18 @@ static inline void io_reset()
 #define LOW	0
 #define HIGH	1
 
-#define DELAY(d)	usleep(d)
+#define DELAY_US(us)		usleep(us)
+#define DELAY_MS(ms)	usleep((ms)*1000)
 
-#ifdef RASP_MODEL_1
+#define BCM2709_RPI2	0x3F000000
+#define BCM2708_RPI		0x20000000
 
-#define BCM2708_PERI_BASE 0x20000000
-
+#ifdef RPI2_BOARD
+#define BCM2708_PERI_BASE		BCM2709_RPI2
+#elif RPI_BOARD
+#define BCM2708_PERI_BASE		BCM2708_RPI
 #else
-
-#define BCM2708_PERI_BASE 0x3F000000
-
+#error Board identifier required to BCM2708_PERI_BASE.
 #endif
 
 #define GPIO_BASE (BCM2708_PERI_BASE + 0x200000)
@@ -211,11 +219,18 @@ static inline void outr_data(param_t reg, pparam_t pd, len_t len)
 	rf_io(&reg, DATA_SIZE, pd, len);
 }
 
-static inline result_t comand(param_t cmd)
+static inline result_t command(param_t cmd)
 {
 	rf_io(NULL, 0, &cmd, DATA_SIZE);
 	// return device status register
 	return cmd;
+}
+
+static inline result_t command_data(param_t cmd, pparam_t pd, len_t len)
+{
+	rf_io(&cmd, DATA_SIZE, pd, len);
+	// return device status register
+	return command(NOP);
 }
 
 static void set_address_pipe(param_t reg, param_t pipe)
@@ -226,17 +241,23 @@ static void set_address_pipe(param_t reg, param_t pipe)
 	outr_data(reg, &pipe_addr, (reg == TX_ADDR || pipe < 2) ? AW_RD(inr(SETUP_AW)) : DATA_SIZE);
 }
 
-static void standby1(void)
+static result_t set_standby1(param_t pipe)
 {
-   result_t config = inr(CONFIG);
+	if (m_mode == UNKNOWN_MODE) {
+		return ERROR;
+	}
 
-   // check if device in power down mode, and so put device in standby-I mode
-   if((config & CFG_PWR_UP) == LOW) {
-      outr(CONFIG, config | CFG_PWR_UP);
-      m_mode = STANDBY_I_MODE;
-	  // delay time to Tpd2stby timing
-      DELAY(5);
-   }
+	// set CFG_PRIM_RX=0 (PTX) that should use only 22uA of power
+	result_t config = inr(CONFIG) & ~CFG_PRIM_RX;
+	disable();
+	outr(CONFIG, config | CFG_PWR_UP);
+	if(m_mode == POWER_DOWN_MODE) {
+		// delay time to Tpd2stby timing
+		DELAY_US(TPD2STBY);
+	}
+	m_mode = STANDBY_I_MODE;
+	set_address_pipe(RX_ADDR_P0, pipe);
+	return SUCCESS;
 }
 
 /*	-----------------------------------
@@ -264,9 +285,9 @@ void nrf24l01_outr_data(param_t reg, pparam_t pd, len_t len)
 	outr_data(reg, pd, len);
 }
 
-result_t nrf24l01_comand(param_t cmd)
+result_t nrf24l01_command(param_t cmd)
 {
-	return comand(cmd);
+	return command(cmd);
 }
 
 void nrf24l01_set_address_pipe(param_t reg, param_t pipe)
@@ -279,93 +300,104 @@ result_t nrf24l01_deinit(void)
 {
 	result_t	value;
 
-	if(m_mode == NONE_MODE || m_mode == POWER_DOWN_MODE)
-		return NRF24l01_DONE;
+	if (m_mode == UNKNOWN_MODE) {
+		return DONE;
+	}
 
-	m_mode = POWER_DOWN_MODE;
-
-	// Set device in power down mode
+	disable();
 	outr(CONFIG, inr(CONFIG) & ~CFG_PWR_UP);
+	m_mode = UNKNOWN_MODE;
 
 	io_reset();
-	return NRF24l01_SUCCESS;
+	return SUCCESS;
 }
 
 result_t nrf24l01_init(void)
 {
 	result_t	value;
 
-	if(m_mode != NONE_MODE && m_mode != POWER_DOWN_MODE)
-		return NRF24l01_DONE;
+	if (m_mode != UNKNOWN_MODE) {
+		return DONE;
+	}
 
 	io_setup();
 
-	// Set device in power down mode
+	// set device in power down mode
 	outr(CONFIG, inr(CONFIG) & ~CFG_PWR_UP);
 	// Delay to establish to operational timing of the nRF24L01
-	DELAY(5);
+	DELAY_US(TPD2STBY);
 
-	// Enable CRC 16-bit and disable all interrupts
+	// set PTX mode and CRC 16-bit
 	value = inr(CONFIG) & ~CONFIG_MASK;
-	outr(CONFIG, value | CFG_EN_CRC | CFG_CRCO |
-						  	  	   	   	   CFG_MASK_RX_DR	| CFG_MASK_TX_DS	| CFG_MASK_MAX_RT);
+	outr(CONFIG, value | CFG_EN_CRC | CFG_CRCO);
 
-	// Reset pending status
+	// reset pending status
 	value = inr(STATUS) & ~STATUS_MASK;
 	outr(STATUS, value | ST_RX_DR | ST_TX_DS | ST_MAX_RT);
 
-	// Reset channel and TX observe registers
+	// reset channel and TX observe registers
 	outr(RF_CH, inr(RF_CH) & ~RF_CH_MASK);
 	// Set the device channel
-	outr(RF_CH, CH(RF_CHANNEL));
+	outr(RF_CH, CH(NRF24L01_CHANNEL));
 
-	// Set RF speed and output power
+	// set RF speed and output power
 	value = inr(RF_SETUP) & ~RF_SETUP_MASK;
-	outr(RF_SETUP, value | RF_DR(RF_DATA_RATE) | RF_PWR(RF_POWER));
+	outr(RF_SETUP, value | RF_DR(NRF24L01_DATA_RATE) | RF_PWR(NRF24L01_POWER));
 
-	// Set address widths
+	// set address widths
 	value = inr(SETUP_AW) & ~SETUP_AW_MASK;
-	outr(SETUP_AW, value | AW(RF_ADDR_WIDTHS));
+	outr(SETUP_AW, value | AW(NRF24L01_ADDR_WIDTHS));
 
-#if (RF_ARC == ARC_DISABLE)
-	// Disable Auto Retransmit Count
+	// disable Auto Retransmit Count
 	outr(SETUP_RETR, RETR_ARC(ARC_DISABLE));
-#else
-	// Set Auto Retransmision Delay and Auto Retransmit Count
-	outr(SETUP_RETR, RETR_ARD(RF_ARD) | RETR_ARC(RF_ARC));
-#endif
 
-	// Disable all Auto Acknowledgment of pipes
+	// disable all Auto Acknowledgment of pipes
 	outr(EN_AA, inr(EN_AA) & ~EN_AA_MASK);
 
-	// Disable all RX addresses
+	// disable all RX addresses
 	outr(EN_RXADDR, inr(EN_RXADDR) & ~EN_RXADDR_MASK);
 
-	// Enable dynamic payload to all pipes
+	// enable dynamic payload to all pipes
 	outr(FEATURE, (inr(FEATURE) & ~FEATURE_MASK) | FT_EN_DPL);
 	value = inr(DYNPD) & ~DYNPD_MASK;
 	outr(DYNPD, value | (DPL_P5 | DPL_P4 | DPL_P3 | DPL_P2 | DPL_P1 | DPL_P0));
 
-	// Reset all the FIFOs
-	comand(FLUSH_TX);
-	comand(FLUSH_RX);
+	// reset all the FIFOs
+	command(FLUSH_TX);
+	command(FLUSH_RX);
 
-	// Set device in standby-I mode
-	standby1();
+	m_mode = POWER_DOWN_MODE;
 
-	return NRF24l01_SUCCESS;
+	// set device in standby-I mode
+	set_standby1(0);
+
+	return SUCCESS;
 }
 
-void nrf24l01_set_channel(param_t ch)
+result_t nrf24l01_set_channel(param_t ch)
 {
-	const param_t max = RF_DR(inr(RF_SETUP)) == DR_2MBPS ? CH_MAX_2MBPS : CH_MAX_1MBPS;
+	param_t max;
 
+	if (m_mode == UNKNOWN_MODE) {
+		return ERROR;
+	}
+
+	set_standby1(0);
+	outr(STATUS, inr(STATUS) | (ST_RX_DR | ST_TX_DS | ST_MAX_RT));
+	command(FLUSH_TX);
+	command(FLUSH_RX);
 	// Set the device channel
+	max = RF_DR(inr(RF_SETUP)) == DR_2MBPS ? CH_MAX_2MBPS : CH_MAX_1MBPS;
 	outr(RF_CH, _CONSTRAIN(ch, CH_MIN, max));
+	return SUCCESS;
 }
 
 result_t nrf24l01_get_channel(void)
 {
+	if (m_mode == UNKNOWN_MODE) {
+		return ERROR;
+	}
+
 	return inr(RF_CH);
 }
 
@@ -373,8 +405,8 @@ result_t nrf24l01_open_pipe(param_t pipe)
 {
 	pipe_reg_t rpipe;
 
-	if(pipe > PIPE_MAX) {
-		return NRF24l01_ERROR;
+	if(m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX) {
+		return ERROR;
 	}
 
 	memcpy_P(&rpipe, &pipe_reg[pipe], sizeof(pipe_reg_t));
@@ -382,32 +414,107 @@ result_t nrf24l01_open_pipe(param_t pipe)
 	if(!(inr(EN_RXADDR) & rpipe.en_rxaddr)) {
 		set_address_pipe(rpipe.rx_addr, pipe);
 		outr(EN_RXADDR, inr(EN_RXADDR) | rpipe.en_rxaddr);
-#if (RF_ARC != ARC_DISABLE)
-		if(pipe == 0) {
-			outr(EN_AA, inr(EN_AA) & ~rpipe.enaa);
-		} else {
-			outr(EN_AA, inr(EN_AA) | rpipe.enaa);
-		}
-#endif
+		outr(EN_AA, inr(EN_AA) | rpipe.enaa);
 	}
-	return NRF24l01_SUCCESS;
+	return SUCCESS;
 }
 
 result_t nrf24l01_close_pipe(param_t pipe)
 {
 	pipe_reg_t rpipe;
 
-	if(pipe > PIPE_MAX) {
-		return NRF24l01_ERROR;
+	if(m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX) {
+		return ERROR;
 	}
 
 	memcpy_P(&rpipe, &pipe_reg[pipe], sizeof(pipe_reg_t));
 
 	if(inr(EN_RXADDR) & rpipe.en_rxaddr) {
 		outr(EN_RXADDR, inr(EN_RXADDR) & ~rpipe.en_rxaddr);
-#if (RF_ARC != ARC_DISABLE)
 		outr(EN_AA, inr(EN_AA) & ~rpipe.enaa);
-#endif
+		outr(SETUP_RETR, RETR_ARC(ARC_DISABLE));
 	}
-	return NRF24l01_SUCCESS;
+	return SUCCESS;
+}
+
+result_t nrf24l01_set_standby(void)
+{
+	if (m_mode == UNKNOWN_MODE) {
+		return ERROR;
+	}
+
+	set_standby1(0);
+	return command(NOP);
+}
+
+result_t nrf24l01_set_prx(void)
+{
+	if (m_mode == UNKNOWN_MODE) {
+		return ERROR;
+	}
+
+	set_standby1(0);
+	outr(CONFIG, inr(CONFIG) | CFG_PRIM_RX);
+	m_mode = RX_MODE;
+	enable();
+	// delay time to Tstdby2a timing
+	DELAY_US(TSTBY2A);
+	return command(NOP);
+}
+
+// read RX payload width for the top R_RX_PAYLOAD in the RX FIFO.
+result_t nrf24l01_prx_getdata(pparam_t pdata, len_t len)
+{
+	len_t	rxlen = 0;
+
+	if (m_mode != RX_MODE) {
+		return ERROR;
+	}
+
+	outr(STATUS, ST_RX_DR);
+
+	command_data(R_RX_PL_WID, &rxlen, DATA_SIZE);
+    // note: flush RX FIFO if the read value is larger than 32 bytes.
+	if (rxlen > NRF24L01_PAYLOAD_SIZE || rxlen == 0 ||
+		pdata == NULL || len == 0) {
+		command(FLUSH_RX);
+		return ERROR;
+	}
+
+	len = _MIN(len, rxlen);
+	command_data(R_RX_PAYLOAD, pdata, len);
+	return len;
+}
+
+result_t nrf24l01_set_ptx(param_t pipe)
+{
+	if (m_mode == UNKNOWN_MODE) {
+		return ERROR;
+	}
+
+	set_standby1(pipe);
+#if (RF_ARC != ARC_DISABLE)
+	// set ARC and ARD by pipe index to different retry periods to reduce data collisions
+	outr(SETUP_RETR, RETR_ARD(((pipe *2) + 5)) | RETR_ARC(NRF24L01_ARC));
+#endif
+	set_address_pipe(TX_ADDR, pipe);
+	outr(CONFIG, inr(CONFIG) & ~CFG_PRIM_RX);
+	m_mode == TX_MODE;
+	enable();
+	return command(NOP);
+}
+
+result_t nrf24l01_ptx_data(pparam_t pdata, len_t len, bool ack)
+{
+	if (m_mode != TX_MODE) {
+		return ERROR;
+	}
+
+	outr(STATUS, ST_TX_DS | ST_MAX_RT);
+
+	if (pdata == NULL || len == 0 || len > NRF24L01_PAYLOAD_SIZE) {
+		return ERROR;
+	}
+
+	return command_data(!ack ? W_TX_PAYLOAD_NO_ACK : W_TX_PAYLOAD, pdata, len);
 }
