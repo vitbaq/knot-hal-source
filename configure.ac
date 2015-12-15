@@ -49,8 +49,5 @@ AC_SUBST(GLIB_LIBS)
 # Substitute all conditionals in these files; this is normally used to
 # create `Makefile`s but could also be used for scripts, include
 # files, etc.
-AC_CONFIG_FILES([Makefile
-										src/Makefile
-										src/nrf24l01/Makefile
-										src/spi/Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile src/nrf24l01/Makefile src/spi/Makefile])
 AC_OUTPUT
