@@ -6,6 +6,7 @@ depcomp
 libtool
 missing
 stamp-h1
+include
 *.cache
 config*
 testc*

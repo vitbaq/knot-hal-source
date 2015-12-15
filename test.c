@@ -8,7 +8,7 @@ int main (void)
   puts ("Hello C World!");
 
   printf("This is " PACKAGE_STRING "\n");
-  printf("Driver name=%s\n" , abstract_driver.name);
+  printf("Driver name=%s\n" , nrf24l01_driver.name);
 
   return 0;
 }

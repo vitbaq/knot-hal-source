@@ -183,7 +183,7 @@ static void io_setup()
 	spi_init();
 }
 
-static inline void io_reset()
+static void io_reset()
 {
 	disable();
 	munmap((void*)gpio, BLOCK_SIZE);
@@ -247,9 +247,9 @@ static result_t set_standby1(param_t pipe)
 		return ERROR;
 	}
 
+	disable();
 	// set CFG_PRIM_RX=0 (PTX) that should use only 22uA of power
 	result_t config = inr(CONFIG) & ~CFG_PRIM_RX;
-	disable();
 	outr(CONFIG, config | CFG_PWR_UP);
 	if(m_mode == POWER_DOWN_MODE) {
 		// delay time to Tpd2stby timing
@@ -368,7 +368,7 @@ result_t nrf24l01_init(void)
 
 	m_mode = POWER_DOWN_MODE;
 
-	// set device in standby-I mode
+	// set device to standby-I mode
 	set_standby1(0);
 
 	return SUCCESS;
@@ -467,7 +467,7 @@ result_t nrf24l01_prx_getdata(pparam_t pdata, len_t len)
 {
 	len_t	rxlen = 0;
 
-	if (m_mode != RX_MODE) {
+	if (m_mode != RX_MODE || pdata == NULL || len == 0) {
 		return ERROR;
 	}
 
@@ -475,8 +475,7 @@ result_t nrf24l01_prx_getdata(pparam_t pdata, len_t len)
 
 	command_data(R_RX_PL_WID, &rxlen, DATA_SIZE);
     // note: flush RX FIFO if the read value is larger than 32 bytes.
-	if (rxlen > NRF24L01_PAYLOAD_SIZE || rxlen == 0 ||
-		pdata == NULL || len == 0) {
+	if (rxlen > NRF24L01_PAYLOAD_SIZE || rxlen == 0) {
 		command(FLUSH_RX);
 		return ERROR;
 	}
@@ -506,7 +505,8 @@ result_t nrf24l01_set_ptx(param_t pipe)
 
 result_t nrf24l01_ptx_data(pparam_t pdata, len_t len, bool ack)
 {
-	if (m_mode != TX_MODE || pdata == NULL || len == 0 || len > NRF24L01_PAYLOAD_SIZE) {
+	if (m_mode != TX_MODE || pdata == NULL ||
+		 len == 0 || len > NRF24L01_PAYLOAD_SIZE) {
 		return ERROR;
 	}
 

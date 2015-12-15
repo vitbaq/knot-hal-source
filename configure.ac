@@ -9,7 +9,7 @@ AC_PREREQ([2.65])
 AC_INIT([knot_lib_drivers],[1.0.0])
 
 # if this file does not exist, `configure` was invoked in the wrong directory
-AC_CONFIG_SRCDIR([src/abstract_driver.c])
+AC_CONFIG_SRCDIR([src/abstract_driver.h])
 
 # directories (relative to top-level) to look into for AutoConf/AutoMake files
 #AC_CONFIG_AUX_DIR([build-aux])
@@ -39,6 +39,12 @@ LT_INIT([static])
 AC_CHECK_HEADERS([stdint.h stddef.h string.h])
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_SIZE_T
+
+# GLIB library to support.
+PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.28, dummy=no,
+				AC_MSG_ERROR(required glib >= 2.28))
+AC_SUBST(GLIB_CFLAGS)
+AC_SUBST(GLIB_LIBS)
 
 # Substitute all conditionals in these files; this is normally used to
 # create `Makefile`s but could also be used for scripts, include

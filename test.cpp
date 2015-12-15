@@ -2,12 +2,34 @@
 #include <stdio.h>
 #include <memory>
 #include <list>
+#include <glib.h>
 
 #include "config.h"
 #include "abstract_driver.h"
 #include "src/nrf24l01/nrf24l01.h"
 
 using namespace std;
+
+static gint	m_event_watch,
+					m_event_watch_id;
+
+static gboolean cb_event_watch(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	int sockfd;
+
+	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR)) {
+		return FALSE;
+	}
+
+	sockfd = g_io_channel_unix_get_fd(io);
+	/* Read pipe address only */
+	//rbytes = read(ttyfd, buffer, sizeof(buffer));
+	if (sockfd < 0)
+		return TRUE;
+
+	return TRUE;
+}
 
 class CPipe {
     //! Pipe ID
@@ -55,7 +77,21 @@ int main(void)
 
 	v.b64 = 0;
 
-    if (find(123) == m_listPipe.end()) {
+//	io = g_io_channel_unix_new(m_sockfd);
+//	if(io == NULL) {
+//		return -ENOMEM;
+//	}
+//
+//	g_io_channel_set_close_on_unref(io, TRUE);
+//
+//	m_event_watch_id = g_io_add_watch(server_io,
+//																			G_IO_IN | G_IO_HUP | G_IO_ERR | G_IO_NVAL,
+//																			cb_event_watch,
+//																			NULL);
+//	/* Keep only one ref. event watch  */
+//	g_io_channel_unref(io);
+
+	if (find(123) == m_listPipe.end()) {
         CPipe *pp = new (std::nothrow) CPipe(123);
         if (pp != NULL) {
         	m_listPipe.push_back(pipe_sp(pp));

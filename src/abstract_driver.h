@@ -41,6 +41,7 @@ extern "C"{
 typedef struct {
 	int (*socket) (void);
 	int (*close) (int sockfd);
+	int (*listen) (int sockfd);
 	int (*accept) (int srv_sockfd);
 	int (*connect) (int cli_sockfd, const void *addr, size_t len);
 
@@ -51,9 +52,9 @@ typedef struct {
 	const char *name;
 	int (*probe) (void);
 	void (*remove) (void);
+	void (*service) (void);
 } abstract_driver_t;
 
-extern abstract_driver_t abstract_driver;
 extern abstract_driver_t nrf24l01_driver;
 
 #ifdef __cplusplus
