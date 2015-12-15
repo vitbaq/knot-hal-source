@@ -5,8 +5,6 @@ AM_CFLAGS = @GLIB_CFLAGS@
 lib_LIBRARIES = libnrf24l01_driver.a
 lib_HEADER = abstract_driver.h
 lib_ARDUINO = nrf24l01_driver.c nrf24l01_proto_net.h \
-							  nrf24l01/nrf24l01.c nrf24l01/nrf24l01.h nrf24l01/nrf24l01_io.h \
-							  spi/spi_arduino.c spi/spi.h \
 							  types.h printf_serial.h \
 							  wd/sleep_wdt.c wd/sleep_wdt.h
 
