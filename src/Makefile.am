@@ -14,12 +14,9 @@ libnrf24l01_driver_a_SOURCES = nrf24l01_driver.c
 libnrf24l01_driver_a_CPPFLAGS = -I$(top_srcdir)/src/nrf24l01
 
 all-local:
-	$(MKDIR_P) $(top_srcdir)/libs
-	cp $(lib_LIBRARIES) $(top_srcdir)/libs
-	$(MKDIR_P) $(top_srcdir)/include
-	cp $(lib_HEADER) $(top_srcdir)/include
-	$(MKDIR_P) $(top_srcdir)/include/arduino
-	cp $(lib_ARDUINO)  $(top_srcdir)/include/arduino
+	$(MKDIR_P) $(top_srcdir)/libs && cp $(lib_LIBRARIES) $(top_srcdir)/libs
+	$(MKDIR_P) $(top_srcdir)/include && cp $(lib_HEADER) $(top_srcdir)/include
+	$(MKDIR_P) $(top_srcdir)/include/arduino && cp $(lib_ARDUINO) $(top_srcdir)/include/arduino
  	   
 clean-local:
 	$(RM) -r libnrf24l01_driver.a
