@@ -1,6 +1,6 @@
 SUBDIRS = nrf24l01 spi
 
-AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS) @GLIB_CFLAGS@
+AM_CFLAGS = @GLIB_CFLAGS@
 
 lib_LIBRARIES = libnrf24l01_driver.a
 lib_HEADER = abstract_driver.h
