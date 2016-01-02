@@ -118,24 +118,24 @@ static inline void io_reset()
 #error Board identifier required to BCM2708_PERI_BASE.
 #endif
 
-#define GPIO_BASE (BCM2708_PERI_BASE + 0x200000)
-#define PAGE_SIZE 4*1024
-#define BLOCK_SIZE 4*1024
+#define GPIO_BASE 		(BCM2708_PERI_BASE + 0x200000)
+#define PAGE_SIZE		(4*1024)
+#define BLOCK_SIZE		(4*1024)
 
 //Raspberry pi GPIO Macros
-#define INP_GPIO(g) *(gpio+((g)/10)) &= ~(7<<(((g)%10)*3))
-#define OUT_GPIO(g) *(gpio+((g)/10)) |=  (1<<(((g)%10)*3))
-#define SET_GPIO_ALT(g,a) *(gpio+(((g)/10))) |= (((a)<=3?(a)+4:(a)==4?3:2)<<(((g)%10)*3))
+#define INP_GPIO(g)					*(gpio+((g)/10)) &= ~(7<<(((g)%10)*3))
+#define OUT_GPIO(g)				*(gpio+((g)/10)) |=  (1<<(((g)%10)*3))
+#define SET_GPIO_ALT(g,a)	*(gpio+(((g)/10))) |= (((a)<=3?(a)+4:(a)==4?3:2)<<(((g)%10)*3))
 
-#define GPIO_SET *(gpio+7)  // sets   bits which are 1 ignores bits which are 0
-#define GPIO_CLR *(gpio+10) // clears bits which are 1 ignores bits which are 0
+#define GPIO_SET						*(gpio+7)  // sets   bits which are 1 ignores bits which are 0
+#define GPIO_CLR						*(gpio+10) // clears bits which are 1 ignores bits which are 0
 
-#define GET_GPIO(g) (*(gpio+13)&(1<<g)) // 0 if LOW, (1<<g) if HIGH
+#define GET_GPIO(g)				(*(gpio+13)&(1<<g)) // 0 if LOW, (1<<g) if HIGH
 
-#define GPIO_PULL *(gpio+37) // Pull up/pull down
-#define GPIO_PULLCLK0 *(gpio+38) // Pull up/pull down clock
+#define GPIO_PULL					*(gpio+37) // Pull up/pull down
+#define GPIO_PULLCLK0			*(gpio+38) // Pull up/pull down clock
 
-static volatile unsigned *gpio;
+static volatile unsigned				*gpio;
 
 /* ----------------------------------
  * Local operation functions
@@ -143,18 +143,16 @@ static volatile unsigned *gpio;
 
 static inline void enable(void)
 {
-	GPIO_SET |= (1<<CE);
+	GPIO_SET = (1<<CE);
 }
 
 static inline void disable(void)
 {
-	GPIO_CLR |= (1<<CE);
+	GPIO_CLR = (1<<CE);
 }
 
 static void io_setup()
 {
-	void *gpio_map;
-
 	//open /dev/mem
 	int mem_fd = open("/dev/mem", O_RDWR|O_SYNC);
 	if (mem_fd < 0) {
@@ -162,20 +160,19 @@ static void io_setup()
 		exit(-1);
 	}
 
-	gpio_map = mmap(NULL,
-										BLOCK_SIZE,
-										PROT_READ | PROT_WRITE,
-										MAP_SHARED,
-										mem_fd,
-										GPIO_BASE);
+	gpio = (volatile unsigned*)mmap(NULL,
+																BLOCK_SIZE,
+																PROT_READ | PROT_WRITE,
+																MAP_SHARED,
+																mem_fd,
+																GPIO_BASE);
    	close(mem_fd);
-   	if (gpio_map == MAP_FAILED) {
+   	if (gpio == MAP_FAILED) {
       		printf("mmap error\n");
       		exit(-1);
    	}
 
-   	gpio = (volatile unsigned *)gpio_map;
-	GPIO_CLR |= (1<<CE);
+	GPIO_CLR = (1<<CE);
 	INP_GPIO(CE);
 	OUT_GPIO(CE);
 
@@ -251,7 +248,7 @@ static result_t set_standby1(param_t pipe)
 	// set CFG_PRIM_RX=0 (PTX) that should use only 22uA of power
 	result_t config = inr(CONFIG) & ~CFG_PRIM_RX;
 	outr(CONFIG, config | CFG_PWR_UP);
-	if(m_mode == POWER_DOWN_MODE) {
+	if (m_mode == POWER_DOWN_MODE) {
 		// delay time to Tpd2stby timing
 		DELAY_US(TPD2STBY);
 	}
@@ -290,6 +287,16 @@ result_t nrf24l01_command(param_t cmd)
 	return command(cmd);
 }
 
+result_t nrf24l01_ce_on(void)
+{
+	enable();
+}
+
+result_t nrf24l01_ce_off(void)
+{
+	disable();
+}
+
 void nrf24l01_set_address_pipe(param_t reg, param_t pipe)
 {
 	set_address_pipe(reg, pipe);
@@ -298,10 +305,10 @@ void nrf24l01_set_address_pipe(param_t reg, param_t pipe)
 
 result_t nrf24l01_deinit(void)
 {
-	result_t	value;
+	int_t		value;
 
 	if (m_mode == UNKNOWN_MODE) {
-		return DONE;
+		return SUCCESS;
 	}
 
 	disable();
@@ -312,12 +319,12 @@ result_t nrf24l01_deinit(void)
 	return SUCCESS;
 }
 
-result_t nrf24l01_init(void)
+result_t	nrf24l01_init(param_t ch)
 {
-	result_t	value;
+	int_t		value;
 
 	if (m_mode != UNKNOWN_MODE) {
-		return DONE;
+		return SUCCESS;
 	}
 
 	io_setup();
@@ -331,14 +338,10 @@ result_t nrf24l01_init(void)
 	value = inr(CONFIG) & ~CONFIG_MASK;
 	outr(CONFIG, value | CFG_EN_CRC | CFG_CRCO);
 
-	// reset pending status
-	value = inr(STATUS) & ~STATUS_MASK;
-	outr(STATUS, value | ST_RX_DR | ST_TX_DS | ST_MAX_RT);
-
 	// reset channel and TX observe registers
 	outr(RF_CH, inr(RF_CH) & ~RF_CH_MASK);
 	// Set the device channel
-	outr(RF_CH, CH(NRF24L01_CHANNEL));
+	outr(RF_CH, CH(ch));
 
 	// set RF speed and output power
 	value = inr(RF_SETUP) & ~RF_SETUP_MASK;
@@ -366,6 +369,10 @@ result_t nrf24l01_init(void)
 	command(FLUSH_TX);
 	command(FLUSH_RX);
 
+	// reset pending status
+	value = inr(STATUS) & ~STATUS_MASK;
+	outr(STATUS, value | ST_RX_DR | ST_TX_DS | ST_MAX_RT);
+
 	m_mode = POWER_DOWN_MODE;
 
 	// set device to standby-I mode
@@ -376,19 +383,24 @@ result_t nrf24l01_init(void)
 
 result_t nrf24l01_set_channel(param_t ch)
 {
-	param_t max;
+	int_t max;
 
 	if (m_mode == UNKNOWN_MODE) {
 		return ERROR;
 	}
 
-	set_standby1(0);
-	outr(STATUS, inr(STATUS) | (ST_RX_DR | ST_TX_DS | ST_MAX_RT));
-	command(FLUSH_TX);
-	command(FLUSH_RX);
-	// Set the device channel
 	max = RF_DR(inr(RF_SETUP)) == DR_2MBPS ? CH_MAX_2MBPS : CH_MAX_1MBPS;
-	outr(RF_CH, _CONSTRAIN(ch, CH_MIN, max));
+	if (ch != _CONSTRAIN(ch, CH_MIN, max))
+		return ERROR;
+
+	if (ch != CH(inr(RF_CH))) {
+		set_standby1(0);
+		command(FLUSH_TX);
+		command(FLUSH_RX);
+		outr(STATUS, inr(STATUS) | (ST_RX_DR | ST_TX_DS | ST_MAX_RT));
+		// Set the device channel
+		outr(RF_CH, CH(_CONSTRAIN(ch, CH_MIN, max)));
+	}
 	return SUCCESS;
 }
 
@@ -398,20 +410,20 @@ result_t nrf24l01_get_channel(void)
 		return ERROR;
 	}
 
-	return inr(RF_CH);
+	return CH(inr(RF_CH));
 }
 
 result_t nrf24l01_open_pipe(param_t pipe)
 {
 	pipe_reg_t rpipe;
 
-	if(m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX) {
+	if (m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX) {
 		return ERROR;
 	}
 
 	memcpy_P(&rpipe, &pipe_reg[pipe], sizeof(pipe_reg_t));
 
-	if(!(inr(EN_RXADDR) & rpipe.en_rxaddr)) {
+	if (!(inr(EN_RXADDR) & rpipe.en_rxaddr)) {
 		set_address_pipe(rpipe.rx_addr, pipe);
 		outr(EN_RXADDR, inr(EN_RXADDR) | rpipe.en_rxaddr);
 		outr(EN_AA, inr(EN_AA) | rpipe.enaa);
@@ -423,13 +435,13 @@ result_t nrf24l01_close_pipe(param_t pipe)
 {
 	pipe_reg_t rpipe;
 
-	if(m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX) {
+	if (m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX) {
 		return ERROR;
 	}
 
 	memcpy_P(&rpipe, &pipe_reg[pipe], sizeof(pipe_reg_t));
 
-	if(inr(EN_RXADDR) & rpipe.en_rxaddr) {
+	if (inr(EN_RXADDR) & rpipe.en_rxaddr) {
 		outr(EN_RXADDR, inr(EN_RXADDR) & ~rpipe.en_rxaddr);
 		outr(EN_AA, inr(EN_AA) & ~rpipe.enaa);
 		outr(SETUP_RETR, RETR_ARC(ARC_DISABLE));
@@ -462,10 +474,19 @@ result_t nrf24l01_set_prx(void)
 	return command(NOP);
 }
 
-// read RX payload width for the top R_RX_PAYLOAD in the RX FIFO.
-result_t nrf24l01_prx_getdata(pparam_t pdata, len_t len)
+result_t nrf24l01_prx_pipe_available(void)
 {
-	len_t	rxlen = 0;
+	int_t pipe = ST_RX_P_NO(inr(STATUS));
+	if (pipe > NRF24L01_PIPE_MAX) {
+		pipe = NRF24L01_NO_PIPE;
+	}
+	return pipe;
+}
+
+// read RX payload width for the top R_RX_PAYLOAD in the RX FIFO.
+result_t nrf24l01_prx_data(pparam_t pdata, len_t len)
+{
+	int_t		rxlen = 0;
 
 	if (m_mode != RX_MODE || pdata == NULL || len == 0) {
 		return ERROR;
@@ -480,9 +501,9 @@ result_t nrf24l01_prx_getdata(pparam_t pdata, len_t len)
 		return ERROR;
 	}
 
-	len = _MIN(len, rxlen);
-	command_data(R_RX_PAYLOAD, pdata, len);
-	return len;
+	rxlen = _MIN(len, rxlen);
+	command_data(R_RX_PAYLOAD, pdata, rxlen);
+	return (result_t)rxlen;
 }
 
 result_t nrf24l01_set_ptx(param_t pipe)
@@ -492,12 +513,13 @@ result_t nrf24l01_set_ptx(param_t pipe)
 	}
 
 	set_standby1(pipe);
-#if (RF_ARC != ARC_DISABLE)
+#if (NRF24L01_ARC != ARC_DISABLE)
 	// set ARC and ARD by pipe index to different retry periods to reduce data collisions
 	outr(SETUP_RETR, RETR_ARD(((pipe *2) + 5)) | RETR_ARC(NRF24L01_ARC));
 #endif
 	set_address_pipe(TX_ADDR, pipe);
 	outr(CONFIG, inr(CONFIG) & ~CFG_PRIM_RX);
+	outr(STATUS, ST_TX_DS | ST_MAX_RT);
 	m_mode == TX_MODE;
 	enable();
 	return command(NOP);
@@ -510,7 +532,18 @@ result_t nrf24l01_ptx_data(pparam_t pdata, len_t len, bool ack)
 		return ERROR;
 	}
 
-	outr(STATUS, ST_TX_DS | ST_MAX_RT);
-
 	return command_data(!ack ? W_TX_PAYLOAD_NO_ACK : W_TX_PAYLOAD, pdata, len);
+}
+
+result_t nrf24l01_ptx_empty(void)
+{
+	if (m_mode != TX_MODE) {
+		return ERROR;
+	}
+
+	while(!(inr(FIFO_STATUS) & FIFO_TX_EMPTY)) {
+		asm("nop");
+		asm("nop");
+	}
+	return SUCCESS;
 }

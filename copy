@@ -15,3 +15,8 @@ cp src/nrf24l01/*.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/sr
 cp src/nrf24l01/*.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
 cp src/spi/*.c ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/spi
 cp src/spi/*.h ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/spi
+cp configure.ac ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
+cp Makefile.am ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/
+cp src/Makefile.am ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src
+cp src/nrf24l01/Makefile.am ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/nrf24l01
+cp src/spi/Makefile.am ../knot-gateway-buildroot/output/build/knot-hal-driver-$1/src/spi

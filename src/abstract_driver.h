@@ -6,9 +6,6 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 
 #ifndef __ABSTRACT_DRIVER_H__
 #define __ABSTRACT_DRIVER_H__
@@ -17,11 +14,23 @@
 #define SOCKET_INVALID		-1
 
 // operation status codes
-#define AD_SUCCESS		0
-#define AD_ERROR			-1
+#define SUCCESS		0
+#define ERROR			-1
 
 #ifdef __cplusplus
 extern "C"{
+#endif
+
+#ifdef ARDUINO
+#define	EPERM			1	/* Operation not permitted */
+#define	EBADF			9	/* Bad file number */
+#define	EAGAIN			11	/* Try again */
+#define	ENOMEM		12	/* Out of memory */
+#define	EACCES		13	/* Permission denied */
+#define	EFAULT			14	/* Bad address */
+#define	EINVAL			22	/* Invalid argument */
+#define	EMFILE			24	/* Too many open files */
+extern int errno;
 #endif
 
  /**

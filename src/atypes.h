@@ -6,9 +6,9 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-#include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 #ifdef ARDUINO
@@ -27,8 +27,10 @@
 #define _ABS(x)							((x)>0?(x):-(x))
 #define _CONSTRAIN(x,l,h)		((x)<(l)?(l):((x)>(h)?(h):(x)))
 
+// invalid socket fd
+#define SOCKET_INVALID		-1
+
 // operation status codes
-#define DONE				1
 #define SUCCESS		0
 #define ERROR			-1
 
@@ -38,17 +40,21 @@ extern "C"{
 
 /* Fast types definition for the platforms */
 #ifdef ARDUINO
-typedef uint_fast8_t		len_t;
-typedef int_fast8_t			param_t;
+typedef uint_fast8_t		uint_t;
+typedef int_fast8_t			int_t;
+typedef int_t						param_t;
+typedef int_t						result_t;
 typedef void						*pparam_t;
-typedef int_fast8_t			result_t;
-#define	LEN_T_MAX		(UINT_FAST8_MAX)
+typedef uint_fast16_t		len_t;
+#define	LEN_T_MAX		 ((uint_fast16_t)-1)
 #else
-typedef size_t					len_t;
-typedef int						param_t;
+typedef uint_fast16_t		uint_t;
+typedef int_fast16_t		int_t;
+typedef int_t						param_t;
+typedef int_t						result_t;
 typedef void						*pparam_t;
-typedef int						result_t;
-#define	LEN_T_MAX	((size_t)-1)
+typedef uint_t					len_t;
+#define	LEN_T_MAX		((uint_fast16_t)-1)
 #endif
 
 /* Uncomment the line to message trace print via USART */

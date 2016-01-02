@@ -6,20 +6,21 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-
 #ifndef __NRF24L01_PROTO_NET_H__
 #define __NRF24L01_PROTO_NET_H__
 
-// net layer return codes
-#define NRF24_SUCCESS		0
-#define NRF24_ERROR			-1
+// net layer result codes
+#define NRF24_SUCCESS						0
+#define NRF24_ERROR							-1
+#define NRF24_INVALID_VERSION		-2
+#define NRF24_NO_JOIN							-3
 
 // Protocol version
 #define NRF24_VERSION_MAJOR		01
 #define NRF24_VERSION_MINOR		00
 
 // Network retransmiting parameters
-#define NRF24_TIMEOUT	100
+#define NRF24_TIMEOUT	100		//miliseconds
 #define NRF24_RETRIES		5
 
 // Network messages
@@ -28,8 +29,7 @@
 #define NRF24_MSG_UNJOIN_LOCAL	0x02
 #define NRF24_MSG_JOIN_GATEWAY	0x03
 #define NRF24_MSG_JOIN_RESULT		0x04
-#define NRF24_MSG_SET_ADDRESS		0x05
-#define NRF24_MSG_APPMSG					0x06
+#define NRF24_MSG_APPMSG					0x05
 
 /**
  * struct nrf24_header - net layer message header
@@ -40,19 +40,19 @@
  * This struct defines the network layer message header
  */
 typedef struct __attribute__ ((packed)) {
-	uint8_t		net_addr;
+	uint16_t		net_addr;
 	uint8_t		msg_type;
 	uint8_t		offset;
 } nrf24_header;
 
 // Network message size parameters
-#define NRF24_PW_SIZE					32
-#define NRF24_MSG_PW_SIZE		(NRF24_PW_SIZE-sizeof(nrf24_header))
-#define NRF24_MSG_MAX_SIZE	(NRF24_MSG_PW_SIZE*255)
+#define NRF24_PW_SIZE							32
+#define NRF24_MSG_PW_SIZE				(NRF24_PW_SIZE-sizeof(nrf24_header))
+#define NRF24_MSG_MAX_OFFSET	(NRF24_MSG_PW_SIZE*255)
+#define NRF24_MSG_MAX_SIZE			((NRF24_MSG_PW_SIZE*NRF24_MSG_MAX_OFFSET)+NRF24_MSG_PW_SIZE)
 
 /**
  * struct nrf24_join_local - net layer join local message
- * @hdr: padding for the header
  * @net_maj_version: protocol version, major number
  * @net_min_version: protocol version, minor number
  * @result: result for the join process
@@ -60,25 +60,12 @@ typedef struct __attribute__ ((packed)) {
  * This struct defines the net layer join local message.
  */
 typedef struct __attribute__ ((packed)) {
-	nrf24_header	hdr;
 	uint8_t				maj_version;
 	uint8_t				min_version;
+	uint8_t				pipe;
 	uint32_t				hashid;
-	uint8_t				result;
+	int8_t					result;
 } nrf24_join_local;
-
-/**
- * struct nrf24_msg - net layer application message
- * @hdr: padding for the header
- * @data: application layer message
- *
- * This struct defines the network layer message that encapsulates an
- * application layer message.
- */
-typedef struct __attribute__ ((packed)) {
-	nrf24_header	hdr;
-	uint8_t				data[];
-} nrf24_msg;
 
 /**
  * union nrf24_payload - defines a network layer payload
@@ -88,10 +75,14 @@ typedef struct __attribute__ ((packed)) {
  *
  * This union defines the network layer payload.
  */
-typedef union {
+typedef struct __attribute__ ((packed))  {
 	nrf24_header		hdr;
-	nrf24_msg				msg;
-	nrf24_join_local	join;
+	union {
+		nrf24_join_local	join;
+		uint8_t					data[NRF24_MSG_PW_SIZE];
+	} msg;
 } nrf24_payload;
+
+#define NRF24_JOIN_PW_SIZE		(sizeof(nrf24_header)+sizeof(nrf24_join_local))
 
 #endif //	__NRF24L01_PROTO_NET_H__

@@ -3,6 +3,7 @@
 #include <memory>
 #include <list>
 #include <glib.h>
+#include <unistd.h>
 
 #include "config.h"
 #include "abstract_driver.h"
@@ -111,20 +112,20 @@ int main(void)
 
 	nrf24l01_driver.probe();
 
-	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_command(NOP));
-	printf("RX: EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));
+	printf("[%d]RX: register=0x%02lx status=%#02lx\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_command(NOP));
+	printf("RX: EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));
 	nrf24l01_open_pipe(0);
-	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE0 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(1);
-	printf("RX: PIPE1 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE1 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(2);
-	printf("RX: PIPE2 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE2 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(3);
-	printf("RX: PIPE3 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE3 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(4);
-	printf("RX: PIPE4 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE4 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(5);
-	printf("RX: PIPE5 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE5 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_inr_data(RX_ADDR_P0, &v.b64, AW_RD(nrf24l01_inr(SETUP_AW)));
 	printf("    RX_ADDR_P0=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
 	nrf24l01_inr_data(RX_ADDR_P1, &v.b64, AW_RD(nrf24l01_inr(SETUP_AW)));
@@ -156,35 +157,35 @@ int main(void)
 	nrf24l01_inr_data(TX_ADDR, &v.b64, AW_RD(nrf24l01_inr(SETUP_AW)));
 	printf("    TX_ADDR=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
 	nrf24l01_close_pipe(5);
-	printf("RX: PIPE5 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE5 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(4);
-	printf("RX: PIPE4 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE4 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(3);
-	printf("RX: PIPE3 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE3 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(2);
-	printf("RX: PIPE2 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE2 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(1);
-	printf("RX: PIPE1 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE1 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(0);
-	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE0 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 
 	nrf24l01_driver.remove();
 	nrf24l01_driver.probe();
 
-	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_command(NOP));
-	printf("RX: EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));
+	printf("[%d]RX: register=0x%02lx status=%#02lx\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_command(NOP));
+	printf("RX: EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));
 	nrf24l01_open_pipe(0);
-	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE0 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(1);
-	printf("RX: PIPE1 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE1 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(2);
-	printf("RX: PIPE2 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE2 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(3);
-	printf("RX: PIPE3 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE3 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(4);
-	printf("RX: PIPE4 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE4 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_open_pipe(5);
-	printf("RX: PIPE5 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE5 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_inr_data(RX_ADDR_P0, &v.b64, AW_RD(nrf24l01_inr(SETUP_AW)));
 	printf("    RX_ADDR_P0=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
 	nrf24l01_inr_data(RX_ADDR_P1, &v.b64, AW_RD(nrf24l01_inr(SETUP_AW)));
@@ -216,17 +217,24 @@ int main(void)
 	nrf24l01_inr_data(TX_ADDR, &v.b64, AW_RD(nrf24l01_inr(SETUP_AW)));
 	printf("    TX_ADDR=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
 	nrf24l01_close_pipe(5);
-	printf("RX: PIPE5 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE5 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(4);
-	printf("RX: PIPE4 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE4 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(3);
-	printf("RX: PIPE3 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE3 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(2);
-	printf("RX: PIPE2 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE2 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(1);
-	printf("RX: PIPE1 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE1 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 	nrf24l01_close_pipe(0);
-	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+	printf("RX: PIPE0 EN_RXADDR=0x%02lx EN_AA=%#02lx\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
+
+	for(count=10; count!=0; --count) {
+		nrf24l01_ce_on();
+		usleep(10);
+		nrf24l01_ce_off();
+		usleep(10);
+	}
 
 	nrf24l01_driver.remove();
 

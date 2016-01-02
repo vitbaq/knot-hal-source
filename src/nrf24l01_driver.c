@@ -8,215 +8,228 @@
  */
 #include <stdio.h>
 
-#ifndef ARDUINO
-#include <unistd.h>
-#include <sys/eventfd.h>
-#include <errno.h>
-#include <glib.h>
-#endif
-
 #include "abstract_driver.h"
-#include "nrf24l01_proto_net.h"
 #include "nrf24l01.h"
+//#include "nrf24l01_client.h"
+
+#ifndef ARDUINO
+#include "nrf24l01_server.h"
+#else
+int errno = SUCCESS;
+#endif
 
 #define NRF24L01_DRIVER_NAME		"nRF24L01 driver"
 
-static bool m_binit = false;
-static int m_srvfd = SOCKET_INVALID;
+#define NRF24L01_CHANNEL				NRF24L01_CHANNEL_DEFAULT
 
-#ifndef ARDUINO
-enum state {
-	fdUNKNOWN,
-	fdCLOSE,
-	fdOPEN,
-	fdUSE
+enum {
+	eINVALID,
+	eUNKNOWN,
+	eSERVER,
+	eCLIENT
 } ;
 
-typedef struct  {
-	int	clifd;
-	int	state;
-} client_t;
-
-static GSList *m_pclients = NULL;
-static eventfd_t m_naccept = 0;
-
-static inline void clients_free(gpointer pentry)
-{
-	close(((client_t*)pentry)->clifd);
-	g_free(pentry);
-}
-
-static inline gint clifd_match(gconstpointer pda, gconstpointer pdb)
-{
-	return ((const client_t*)pda)->clifd - ((const client_t*)pdb)->clifd;
-}
-
-static inline gint state_match(gconstpointer pda, gconstpointer pdb)
-{
-	return ((const client_t*)pda)->state - ((const client_t*)pdb)->state;
-}
-
-#endif
+static int	m_state = eINVALID,
+					m_fd = SOCKET_INVALID;
 
 /*
  * HAL functions
  */
 static int nrf24_socket(void)
 {
-	if (!m_binit || m_srvfd != SOCKET_INVALID)
-		return AD_ERROR;
+	if (m_state == eINVALID || m_fd != SOCKET_INVALID) {
+		errno = EACCES;
+		return ERROR;
+	}
 
 #ifndef ARDUINO
-	m_srvfd = eventfd(0, EFD_CLOEXEC);
-	if (m_srvfd < 0) {
-		return -errno;
+	m_fd = eventfd(0, EFD_CLOEXEC);
+	if (m_fd < 0) {
+		return ERROR;
 	}
 #else
-	m_srvfd = 0;
+	m_fd = 0;
 #endif
-	return m_srvfd;
+	return m_fd;
 }
 
 static int nrf24_close(int socket)
 {
-	if (socket == SOCKET_INVALID)
-		return AD_ERROR;
+	int	state = m_state;
+	if (socket == SOCKET_INVALID) {
+		errno = EBADF;
+		return ERROR;
+	}
 
 #ifndef ARDUINO
-	if (socket == m_srvfd) {
-		g_slist_free_full(m_pclients, clients_free);
-		close(m_srvfd);
-		m_srvfd = SOCKET_INVALID;
-	} else
-	{
-		GSList *pentry = NULL;
-		// find the client socket in list
-		pentry = g_slist_find_custom(m_pclients, &socket, clifd_match);
-		if (!pentry) {
-			return AD_ERROR;
-		}
-		// set CLOSE state
-		((client_t*)pentry->data)->state = fdCLOSE;
+	if (socket == m_fd) {
+		close(m_fd);
+		m_fd = SOCKET_INVALID;
+		m_state =  eUNKNOWN;
+	}
+	if (state == eCLIENT) {
+		//return nrf24l01_client_close(socket);
+	}
+	if (state == eSERVER) {
+		return nrf24l01_server_close(socket);
 	}
 #else
-	m_srvfd = SOCKET_INVALID;
+	if (socket == m_fd) {
+		m_fd = SOCKET_INVALID;
+		m_state =  eUNKNOWN;
+	}
+	if (state == eCLIENT) {
+		//return nrf24l01_client_close(socket);
+	}
 #endif
-	return AD_SUCCESS;
+	return SUCCESS;
 }
 
 static int nrf24_listen(int socket)
 {
 #ifndef ARDUINO
-	if (socket == SOCKET_INVALID || socket != m_srvfd)
-		return AD_ERROR;
+	int result;
 
-	return AD_ERROR;
+	if (m_fd == SOCKET_INVALID || socket != m_fd) {
+		errno = EBADF;
+		return ERROR;
+	}
+	if (m_state != eUNKNOWN) {
+		errno = EACCES;
+		return ERROR;
+	}
+
+	result = nrf24l01_server_open(socket, NRF24L01_CHANNEL);
+	if (result == SUCCESS) {
+		m_state = eSERVER;
+	}
+	return  result;
 #else
-	return AD_ERROR;
+	errno = EPERM;
+	return ERROR;
 #endif
 }
 
 static int nrf24_accept(int socket)
 {
 #ifndef ARDUINO
-	int st;
-	GSList *pentry = NULL;
-
-	if (socket == SOCKET_INVALID || socket != m_srvfd)
-		return AD_ERROR;
-
-	// check for connections pending
-	if(m_naccept == 0) {
-	   st = eventfd_read(socket, &m_naccept);
-	   if (st < 0)
-			return -errno;
+	if (m_fd == SOCKET_INVALID || socket != m_fd) {
+		errno = EBADF;
+		return ERROR;
+	}
+	if (m_state != eSERVER) {
+		errno = EACCES;
+		return ERROR;
 	}
 
-	--m_naccept;
-
-	// find the client in list which is open state
-	st = fdOPEN;
-	pentry = g_slist_find_custom(m_pclients, &st, state_match);
-	if (!pentry) {
-		return AD_ERROR;
-	}
-
-	// set USE state
-	((client_t*)pentry->data)->state = fdUSE;
-
-//	client_t *pc;
-//	pc = g_new0(client_t, 1);
-//	if(pc == NULL) {
-//		close(clifd);
-//		return -errno;
-//	}
-//
-//	clifd = eventfd(0, EFD_CLOEXEC);
-//	if (clifd < 0) {
-//		return -errno;
-//	}
-//	pc->clifd = clifd;
-//	m_pclients = g_slist_append(m_pclients, pc);
-
-	return ((client_t*)pentry->data)->clifd;
+	return nrf24l01_server_accept(socket);
 #else
-	return AD_ERROR;
+	errno = EPERM;
+	return ERROR;
 #endif
 }
 
 static int nrf24_connect(int socket, const void *addr, size_t len)
 {
-	if (socket == SOCKET_INVALID || socket != m_srvfd)
-		return AD_ERROR;
+	int result;
 
-	return AD_ERROR;
+	if (m_fd == SOCKET_INVALID || socket != m_fd) {
+		errno = EBADF;
+		return ERROR;
+	}
+	if (m_state != eUNKNOWN) {
+		errno = EACCES;
+		return ERROR;
+	}
+
+	//result = nrf24l01_client_open(socket);
+	if (result == SUCCESS) {
+		m_state = eCLIENT;
+	}
+	return  result;
 }
 
 static int nrf24_available(int socket)
 {
-	if (socket == SOCKET_INVALID)
-		return AD_ERROR;
+	if (socket == SOCKET_INVALID) {
+		errno = EBADF;
+		return ERROR;
+	}
+	if (m_state == eUNKNOWN) {
+		errno = EACCES;
+		return ERROR;
+	}
 
-	return AD_SUCCESS;
+	if (m_state == eCLIENT) {
+		//return nrf24l01_client_available(socket);
+	}
+#ifndef ARDUINO
+	if (m_state == eSERVER) {
+		return nrf24l01_server_available(socket);
+	}
+	errno = EBADF;
+	return ERROR;
+#else
+	return SUCCESS;
+#endif
 }
 
 static size_t nrf24_recv(int socket, void *buffer, size_t len)
 {
-	if (socket == SOCKET_INVALID)
-		return AD_ERROR;
+	if (socket == SOCKET_INVALID) {
+		errno = EBADF;
+		return ERROR;
+	}
+	if (socket == m_fd && m_state != eCLIENT) {
+		errno = EACCES;
+		return ERROR;
+	}
 
 	return 0;
 }
 
 static size_t nrf24_send(int socket, const void *buffer, size_t len)
 {
-	if (socket == SOCKET_INVALID)
-		return AD_ERROR;
+	if (socket == SOCKET_INVALID) {
+		errno = EBADF;
+		return ERROR;
+	}
+	if (socket == m_fd && m_state != eCLIENT) {
+		errno = EACCES;
+		return ERROR;
+	}
 
 	return 0;
 }
 
 static int nrf24_probe(void)
 {
-#ifndef ARDUINO
-	m_pclients = NULL;
-	m_naccept = 0;
-#endif
-	m_binit = (nrf24l01_init() != AD_ERROR);
-	return (m_binit ? AD_SUCCESS : AD_ERROR);
+	if(m_state)	{
+		return SUCCESS;
+	}
+	m_state = (nrf24l01_init(NRF24L01_CHANNEL) == SUCCESS) ? eUNKNOWN : eINVALID;
+	return (m_state == eUNKNOWN ? SUCCESS : ERROR);
 }
 
 static void nrf24_remove(void)
 {
-	if (m_binit) {
-		m_binit = false;
-		nrf24_close(m_srvfd);
+	if (m_state != eINVALID) {
+		nrf24_close(m_fd);
 		nrf24l01_deinit();
+		m_state = eINVALID;
 	}
 }
 
 static void nrf24_service(void)
 {
+	if (m_state == eCLIENT) {
+		//nrf24l01_client_service();
+	}
+#ifndef ARDUINO
+	if (m_state == eSERVER) {
+		nrf24l01_server_service();
+	}
+#endif
 }
 
 /*
