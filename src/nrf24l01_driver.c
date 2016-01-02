@@ -207,7 +207,7 @@ static int nrf24_probe(void)
 	if(m_state)	{
 		return SUCCESS;
 	}
-	m_state = (nrf24l01_init(NRF24L01_CHANNEL) == SUCCESS) ? eUNKNOWN : eINVALID;
+	m_state = (nrf24l01_init() == SUCCESS) ? eUNKNOWN : eINVALID;
 	return (m_state == eUNKNOWN ? SUCCESS : ERROR);
 }
 

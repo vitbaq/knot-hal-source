@@ -46,7 +46,7 @@ result_t nrf24l01_ce_off(void);
 /*
 * nrf24l01_init - initialize the nRF24L01 device
 */
-result_t	nrf24l01_init(param_t ch);
+result_t	nrf24l01_init(void);
 result_t	nrf24l01_deinit(void);
 result_t	nrf24l01_set_channel(param_t ch);
 result_t	nrf24l01_get_channel(void);

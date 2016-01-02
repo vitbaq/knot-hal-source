@@ -319,7 +319,7 @@ result_t nrf24l01_deinit(void)
 	return SUCCESS;
 }
 
-result_t	nrf24l01_init(param_t ch)
+result_t	nrf24l01_init(void)
 {
 	int_t		value;
 
@@ -341,7 +341,7 @@ result_t	nrf24l01_init(param_t ch)
 	// reset channel and TX observe registers
 	outr(RF_CH, inr(RF_CH) & ~RF_CH_MASK);
 	// Set the device channel
-	outr(RF_CH, CH(ch));
+	outr(RF_CH, CH(NRF24L01_CHANNEL_DEFAULT));
 
 	// set RF speed and output power
 	value = inr(RF_SETUP) & ~RF_SETUP_MASK;
