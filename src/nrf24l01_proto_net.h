@@ -29,7 +29,8 @@
 #define NRF24_MSG_UNJOIN_LOCAL	0x02
 #define NRF24_MSG_JOIN_GATEWAY	0x03
 #define NRF24_MSG_JOIN_RESULT		0x04
-#define NRF24_MSG_APPMSG					0x05
+#define NRF24_MSG_HEARTBEAT			0x05
+#define NRF24_MSG_APPMSG					0x06
 
 /**
  * struct nrf24_header - net layer message header
@@ -62,8 +63,8 @@ typedef struct __attribute__ ((packed)) {
 typedef struct __attribute__ ((packed)) {
 	uint8_t				maj_version;
 	uint8_t				min_version;
-	uint8_t				pipe;
 	uint32_t				hashid;
+	uint8_t				pipe;
 	int8_t					result;
 } nrf24_join_local;
 
@@ -79,7 +80,7 @@ typedef struct __attribute__ ((packed))  {
 	nrf24_header		hdr;
 	union {
 		nrf24_join_local	join;
-		uint8_t					data[NRF24_MSG_PW_SIZE];
+		uint8_t					raw[NRF24_MSG_PW_SIZE];
 	} msg;
 } nrf24_payload;
 
