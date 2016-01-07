@@ -159,7 +159,7 @@ int main(int argc, char **argv)
 	printf("sizeof(len_t)=%ld max=%lu\n", sizeof(len_t), LEN_T_MAX);
 	printf("sizeof(int_t)=%ld\n", sizeof(int_t));
 	printf("sizeof(result_t)=%ld\n", sizeof(result_t));
-	printf("sizeof(param_t)=%ld\n", sizeof(param_t));
+	printf("sizeof(param_t)=%ld\n", sizeof(int_t));
 	printf("sizeof(long unsigned int)=%ld\n", sizeof(long unsigned int));
 	printf("sizeof(int)=%ld\n", sizeof(int));
 

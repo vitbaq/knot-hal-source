@@ -17,7 +17,7 @@
 #define	PIPE1_ADDR_BASE	0xaa55aa55a5LL
 
 // data word size
-#define DATA_SIZE	sizeof(uint8_t)
+#define DATA_SIZE	sizeof(byte_t)
 
 // time delay in microseconds (us)
 #define TPD2STBY			5000		//5ms
@@ -189,48 +189,48 @@ static void io_reset()
 
 #endif		// ifdef (ARDUINO)
 
-static inline result_t inr(param_t reg)
+static inline result_t inr(byte_t reg)
 {
-	result_t value = NOP;
+	byte_t value = NOP;
 	reg = R_REGISTER(reg);
 	rf_io(&reg, DATA_SIZE, &value, DATA_SIZE);
-	return value;
+	return (result_t)value;
 }
 
-static inline void inr_data(param_t reg, pparam_t pd, len_t len)
+static inline void inr_data(byte_t reg, pdata_t pd, len_t len)
 {
 	memset(pd, NOP, len);
 	reg = R_REGISTER(reg);
 	rf_io(&reg, DATA_SIZE, pd, len);
 }
 
-static inline void outr(param_t reg, param_t value)
+static inline void outr(byte_t reg, byte_t value)
 {
 	reg = W_REGISTER(reg);
 	rf_io(&reg, DATA_SIZE, &value, DATA_SIZE);
 }
 
-static inline void outr_data(param_t reg, pparam_t pd, len_t len)
+static inline void outr_data(byte_t reg, pdata_t pd, len_t len)
 {
 	reg = W_REGISTER(reg);
 	rf_io(&reg, DATA_SIZE, pd, len);
 }
 
-static inline result_t command(param_t cmd)
+static inline result_t command(byte_t cmd)
 {
 	rf_io(NULL, 0, &cmd, DATA_SIZE);
 	// return device status register
-	return cmd;
+	return (result_t)cmd;
 }
 
-static inline result_t command_data(param_t cmd, pparam_t pd, len_t len)
+static inline result_t command_data(byte_t cmd, pdata_t pd, len_t len)
 {
 	rf_io(&cmd, DATA_SIZE, pd, len);
 	// return device status register
 	return command(NOP);
 }
 
-static void set_address_pipe(param_t reg, param_t pipe)
+static void set_address_pipe(byte_t reg, byte_t pipe)
 {
 	uint64_t	pipe_addr = (pipe == 0) ? PIPE0_ADDR_BASE : PIPE1_ADDR_BASE;
 
@@ -238,7 +238,7 @@ static void set_address_pipe(param_t reg, param_t pipe)
 	outr_data(reg, &pipe_addr, (reg == TX_ADDR || pipe < 2) ? AW_RD(inr(SETUP_AW)) : DATA_SIZE);
 }
 
-static result_t set_standby1(param_t pipe)
+static result_t set_standby1(byte_t pipe)
 {
 	if (m_mode == UNKNOWN_MODE) {
 		return ERROR;
@@ -246,7 +246,7 @@ static result_t set_standby1(param_t pipe)
 
 	disable();
 	// set CFG_PRIM_RX=0 (PTX) that should use only 22uA of power
-	result_t config = inr(CONFIG) & ~CFG_PRIM_RX;
+	byte_t config = inr(CONFIG) & ~CFG_PRIM_RX;
 	outr(CONFIG, config | CFG_PWR_UP);
 	if (m_mode == POWER_DOWN_MODE) {
 		// delay time to Tpd2stby timing
@@ -262,27 +262,27 @@ static result_t set_standby1(param_t pipe)
  */
 //>>>>>>>>>>
 // TODO: functions to test, we can remove them on development end
-result_t nrf24l01_inr(param_t reg)
+result_t nrf24l01_inr(byte_t reg)
 {
 	return inr(reg);
 }
 
-void nrf24l01_inr_data(param_t reg, pparam_t pd, len_t len)
+void nrf24l01_inr_data(byte_t reg, pdata_t pd, len_t len)
 {
 	inr_data(reg, pd, len);
 }
 
-void nrf24l01_outr(param_t reg, param_t value)
+void nrf24l01_outr(byte_t reg, byte_t value)
 {
 	outr(reg, value);
 }
 
-void nrf24l01_outr_data(param_t reg, pparam_t pd, len_t len)
+void nrf24l01_outr_data(byte_t reg, pdata_t pd, len_t len)
 {
 	outr_data(reg, pd, len);
 }
 
-result_t nrf24l01_command(param_t cmd)
+result_t nrf24l01_command(byte_t cmd)
 {
 	return command(cmd);
 }
@@ -297,7 +297,7 @@ result_t nrf24l01_ce_off(void)
 	disable();
 }
 
-void nrf24l01_set_address_pipe(param_t reg, param_t pipe)
+void nrf24l01_set_address_pipe(byte_t reg, byte_t pipe)
 {
 	set_address_pipe(reg, pipe);
 }
@@ -321,7 +321,7 @@ result_t nrf24l01_deinit(void)
 
 result_t	nrf24l01_init(void)
 {
-	int_t		value;
+	byte_t		value;
 
 	if (m_mode != UNKNOWN_MODE) {
 		return SUCCESS;
@@ -381,9 +381,9 @@ result_t	nrf24l01_init(void)
 	return SUCCESS;
 }
 
-result_t nrf24l01_set_channel(param_t ch)
+result_t nrf24l01_set_channel(byte_t ch)
 {
-	int_t max;
+	byte_t max;
 
 	if (m_mode == UNKNOWN_MODE) {
 		return ERROR;
@@ -413,7 +413,7 @@ result_t nrf24l01_get_channel(void)
 	return CH(inr(RF_CH));
 }
 
-result_t nrf24l01_open_pipe(param_t pipe)
+result_t nrf24l01_open_pipe(byte_t pipe)
 {
 	pipe_reg_t rpipe;
 
@@ -431,7 +431,7 @@ result_t nrf24l01_open_pipe(param_t pipe)
 	return SUCCESS;
 }
 
-result_t nrf24l01_close_pipe(param_t pipe)
+result_t nrf24l01_close_pipe(byte_t pipe)
 {
 	pipe_reg_t rpipe;
 
@@ -476,17 +476,17 @@ result_t nrf24l01_set_prx(void)
 
 result_t nrf24l01_prx_pipe_available(void)
 {
-	int_t pipe = ST_RX_P_NO(inr(STATUS));
+	byte_t pipe = ST_RX_P_NO(inr(STATUS));
 	if (pipe > NRF24L01_PIPE_MAX) {
 		pipe = NRF24L01_NO_PIPE;
 	}
-	return pipe;
+	return (result_t)pipe;
 }
 
 // read RX payload width for the top R_RX_PAYLOAD in the RX FIFO.
-result_t nrf24l01_prx_data(pparam_t pdata, len_t len)
+result_t nrf24l01_prx_data(pdata_t pdata, len_t len)
 {
-	int_t		rxlen = 0;
+	len_t		rxlen = 0;
 
 	if (m_mode != RX_MODE || pdata == NULL || len == 0) {
 		return ERROR;
@@ -506,7 +506,7 @@ result_t nrf24l01_prx_data(pparam_t pdata, len_t len)
 	return (result_t)rxlen;
 }
 
-result_t nrf24l01_set_ptx(param_t pipe)
+result_t nrf24l01_set_ptx(byte_t pipe)
 {
 	if (m_mode == UNKNOWN_MODE) {
 		return ERROR;
@@ -525,7 +525,7 @@ result_t nrf24l01_set_ptx(param_t pipe)
 	return command(NOP);
 }
 
-result_t nrf24l01_ptx_data(pparam_t pdata, len_t len, bool ack)
+result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack)
 {
 	if (m_mode != TX_MODE || pdata == NULL ||
 		 len == 0 || len > NRF24L01_PAYLOAD_SIZE) {

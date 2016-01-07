@@ -33,12 +33,12 @@ extern "C"{
 
 //>>>>>>>>>>
 // TODO: functions to test, we can remove them on development end
-result_t nrf24l01_inr(param_t reg);
-void nrf24l01_inr_data(param_t reg, pparam_t pd, len_t len);
-void nrf24l01_outr(param_t reg, param_t value);
-void nrf24l01_outr_data(param_t reg, pparam_t pd, len_t len);
-result_t nrf24l01_command(param_t cmd);
-void nrf24l01_set_address_pipe(param_t reg, param_t pipe);
+result_t nrf24l01_inr(byte_t reg);
+void nrf24l01_inr_data(byte_t reg, pdata_t pd, len_t len);
+void nrf24l01_outr(byte_t reg, byte_t value);
+void nrf24l01_outr_data(byte_t reg, pdata_t pd, len_t len);
+result_t nrf24l01_command(byte_t cmd);
+void nrf24l01_set_address_pipe(byte_t reg, byte_t pipe);
 result_t nrf24l01_ce_on(void);
 result_t nrf24l01_ce_off(void);
 //<<<<<<<<<<
@@ -48,16 +48,16 @@ result_t nrf24l01_ce_off(void);
 */
 result_t	nrf24l01_init(void);
 result_t	nrf24l01_deinit(void);
-result_t	nrf24l01_set_channel(param_t ch);
+result_t	nrf24l01_set_channel(byte_t ch);
 result_t	nrf24l01_get_channel(void);
-result_t	nrf24l01_open_pipe(param_t pipe);
-result_t	nrf24l01_close_pipe(param_t pipe);
+result_t	nrf24l01_open_pipe(byte_t pipe);
+result_t	nrf24l01_close_pipe(byte_t pipe);
 result_t	nrf24l01_set_standby(void);
 result_t	nrf24l01_set_prx(void);
 result_t nrf24l01_prx_pipe_available(void);
-result_t	nrf24l01_prx_data(pparam_t pdata, len_t len);
-result_t	nrf24l01_set_ptx(param_t pipe);
-result_t	nrf24l01_ptx_data(pparam_t pdata, len_t len, bool ack);
+result_t	nrf24l01_prx_data(pdata_t pdata, len_t len);
+result_t	nrf24l01_set_ptx(byte_t pipe);
+result_t	nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack);
 result_t nrf24l01_ptx_empty(void);
 
 #ifdef __cplusplus

@@ -39,6 +39,11 @@ enum {
 	ePTX
 } ;
 
+enum {
+	sRW,
+	sCLOSE
+};
+
 typedef struct  __attribute__ ((packed)) {
 	int	cli;
 	int 	srv;
@@ -53,10 +58,12 @@ typedef struct  {
 	ulong_t		heartbeat_sec;
 } client_t;
 
-typedef struct {
-	int			len;
-	uint8_t	data[];
-} ptx_entry_t;
+typedef struct  __attribute__ ((packed)) {
+	int			len,
+					offset;
+	uint8_t	sock_op,
+					raw[];
+} nrf24_data_t;
 
 static volatile int			m_fd = SOCKET_INVALID,
 										m_state = eUNKNOWN,
@@ -126,7 +133,7 @@ static int set_pipe_free(int pipe, client_t *pc)
 	return ERROR;
 }
 
-static int build_payload(int addr, int msg, int offset, pparam_t pd, len_t len)
+static int build_payload(int addr, int msg, int offset, pdata_t pd, len_t len)
 {
 	m_payload.hdr.net_addr = addr;
 	m_payload.hdr.msg_type = msg;
@@ -138,15 +145,16 @@ static int build_payload(int addr, int msg, int offset, pparam_t pd, len_t len)
 	return (len+sizeof(nrf24_header));
 }
 
-static ptx_entry_t *put_ptx_queue(pparam_t pd, len_t len)
+static nrf24_data_t *put_ptx_queue(pdata_t pd, len_t len)
 {
-	ptx_entry_t *pe = NULL;
+	nrf24_data_t *pe = NULL;
 
 	if(pd != NULL && len > 0) {
-		pe = g_malloc(len+sizeof(ptx_entry_t));
+		pe = g_malloc(len+sizeof(nrf24_data_t));
 		if(pe != NULL) {
-			memcpy(pe->data, pd, len);
+			memcpy(pe->raw, pd, len);
 			pe->len = len;
+			pe->offset = 0;
 			m_ptx_queue = g_slist_append(m_ptx_queue, pe);
 		}
 	}
@@ -240,8 +248,9 @@ static int prx_service(void)
 						break;
 					}
 					pc->state = eOPEN;
-					pc->hashid = data.msg.join.hashid;
 					pc->pipe = pipe_free;
+					pc->net_addr = data.hdr.net_addr;
+					pc->hashid = data.msg.join.hashid;
 					if(set_pipe_free(pipe_free, pc) == ERROR) {
 						client_close(pc, NULL);
 						g_free(pc);
@@ -253,6 +262,7 @@ static int prx_service(void)
 					pc = pentry->data;
 				}
 				pc->heartbeat_sec = tline_sec();
+				data.msg.join.pipe = pc->pipe;
 				data.msg.join.result == NRF24_SUCCESS;
 				put_ptx_queue(&data, len);
 				break;
@@ -424,12 +434,15 @@ int nrf24l01_server_close(int socket)
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
 	} else {
-		GSList *pentry = g_slist_find_custom(m_pclients, &socket, fdcli_match);
-		if (pentry == NULL && ((client_t*)pentry->data)->fds.cli == SOCKET_INVALID) {
-			errno = EBADF;
-			return ERROR;
-		}
-		client_close(pentry->data, NULL);
+		uint8_t data = sCLOSE;
+		write(socket, &data, sizeof(data));
+		close(socket);
+//		GSList *pentry = g_slist_find_custom(m_pclients, &socket, fdcli_match);
+//		if (pentry == NULL && ((client_t*)pentry->data)->fds.cli == SOCKET_INVALID) {
+//			errno = EBADF;
+//			return ERROR;
+//		}
+//		client_close(pentry->data, NULL);
 	}
 	nrf24l01_server_service();
 	return SUCCESS;
