@@ -7,9 +7,11 @@
 *
 */
 #ifndef ARDUINO
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <glib.h>
 #include <sys/socket.h>
+#include <sys/poll.h>
 
 #include "nrf24l01_server.h"
 #include "nrf24l01.h"
@@ -23,6 +25,10 @@
 #define JOIN_DELAY			20									//ms
 #define JOIN_INTERVAL	50									//20ms <= interval <= 1s
 
+#define AVAILABLE_POLLTIME_NS	1000000	//1ms
+
+#define INVALID_EVENTFD		((eventfd_t)-2)
+
 enum {
 	eUNKNOWN,
 	eCLOSE,
@@ -32,17 +38,18 @@ enum {
 	eJOIN_PENDING,
 	eJOIN_TIMEOUT,
 	eJOIN_INTERMITION,
-	eJOIN_NO,
-	eJOIN_NO_CHANNELS,
+	eJOIN_ECONNREFUSED,
+	eJOIN_CHANNEL_BUSY,
 
 	ePRX,
 	ePTX
 } ;
 
-enum {
-	sRW,
-	sCLOSE
-};
+typedef struct  __attribute__ ((packed)) {
+	int			len,
+					offset;
+	uint8_t	raw[];
+} data_t;
 
 typedef struct  __attribute__ ((packed)) {
 	int	cli;
@@ -56,44 +63,29 @@ typedef struct  {
 	uint16_t		net_addr;
 	uint32_t		hashid;
 	ulong_t		heartbeat_sec;
+	data_t			*rxmsg;
 } client_t;
-
-typedef struct  __attribute__ ((packed)) {
-	int			len,
-					offset;
-	uint8_t	sock_op,
-					raw[];
-} nrf24_data_t;
 
 static volatile int			m_fd = SOCKET_INVALID,
 										m_state = eUNKNOWN,
 										m_nref = 0;
 static GSList					*m_pclients = NULL,
-										*m_ptx_queue = NULL;
+										*m_ptx_queue = NULL,
+										*m_prx_queue = NULL;
 static client_t				*m_pipes[NRF24L01_PIPE_MAX] =  { NULL, NULL, NULL, NULL, NULL };
-static int						m_channel = NRF24L01_CHANNEL_DEFAULT;
 static eventfd_t			m_naccept = 0;
-static nrf24_payload	m_payload;
-static	len_t					m_payload_len;
+static data_t					*m_join_data = NULL;
 
 static void client_free(gpointer pentry)
 {
-	close(((client_t*)pentry)->fds.cli);
 	close(((client_t*)pentry)->fds.srv);
 	g_free(pentry);
 }
 
 void client_close(gpointer pentry, gpointer user_data)
 {
-	close(((client_t*)pentry)->fds.cli);
 	close(((client_t*)pentry)->fds.srv);
-	((client_t*)pentry)->fds.cli = SOCKET_INVALID;
 	((client_t*)pentry)->fds.srv = SOCKET_INVALID;
-}
-
-static inline gint fdcli_match(gconstpointer pentry, gconstpointer pdata)
-{
-	return ((const client_t*)pentry)->fds.cli - *((const int*)pdata);
 }
 
 static inline gint state_match(gconstpointer pentry, gconstpointer pdata)
@@ -111,6 +103,19 @@ static inline int get_delay_random(void)
 {
 	srand((unsigned)time(NULL));
 	return (((rand() % JOIN_INTERVAL) + 1)  * JOIN_DELAY);
+}
+
+static int poll_fd(int fd, long int timeout)
+{
+	struct pollfd fd_poll;
+	struct timespec time;
+
+	fd_poll.fd = fd;
+	fd_poll.events = POLLIN | POLLPRI | POLLRDHUP;
+	fd_poll.revents = 0;
+	time.tv_sec = 0;
+	time.tv_nsec = timeout;
+	return ppoll(&fd_poll, 1, &time, NULL);
 }
 
 static int get_pipe_free(void)
@@ -133,32 +138,44 @@ static int set_pipe_free(int pipe, client_t *pc)
 	return ERROR;
 }
 
-static int build_payload(int addr, int msg, int offset, pdata_t pd, len_t len)
+static data_t *build_data(void *praw, len_t len, data_t *msg)
 {
-	m_payload.hdr.net_addr = addr;
-	m_payload.hdr.msg_type = msg;
-	m_payload.hdr.offset = offset;
-	if (len > sizeof(m_payload.msg.raw)) {
-		len = sizeof(m_payload.msg.raw);
+	len_t size = (msg != NULL) ? msg->len : 0;
+
+	msg = (data_t*)realloc(msg, sizeof(data_t) + size + len);
+	if (msg == NULL) {
+		return NULL;
 	}
-	memcpy(m_payload.msg.raw, pd, len);
-	return (len+sizeof(nrf24_header));
+
+	memcpy(msg->raw + size, praw, len);
+	msg->len = size + len;
+	msg->offset = 0;
+	return msg;
 }
 
-static nrf24_data_t *put_ptx_queue(pdata_t pd, len_t len)
+static data_t *build_ptx_payload(int addr, int type, int offset, pdata_t praw, len_t len)
 {
-	nrf24_data_t *pe = NULL;
+	nrf24_payload *payload = g_malloc(sizeof(nrf24_header)+len);
+	data_t *pd;
 
-	if(pd != NULL && len > 0) {
-		pe = g_malloc(len+sizeof(nrf24_data_t));
-		if(pe != NULL) {
-			memcpy(pe->raw, pd, len);
-			pe->len = len;
-			pe->offset = 0;
-			m_ptx_queue = g_slist_append(m_ptx_queue, pe);
-		}
+	if(payload == NULL) {
+		return NULL;
 	}
-	return pe;
+
+	payload->hdr.net_addr = addr;
+	payload->hdr.msg_type = type;
+	payload->hdr.offset = offset;
+	memcpy(payload->msg.raw, praw, len);
+	pd = build_data(payload, sizeof(nrf24_header)+len, NULL);
+	g_free(payload);
+	return pd;
+}
+
+static inline void put_ptx_queue(pdata_t pd)
+{
+	if (pd != NULL) {
+		m_ptx_queue = g_slist_append(m_ptx_queue, pd);
+	}
 }
 
 static int waiting_tx_immediate(int timeout)
@@ -186,32 +203,6 @@ static int waiting_tx_immediate(int timeout)
 	return 1;
 }
 
-static int join_read(ulong_t start)
-{
-	nrf24_payload	data;
-	int	pipe,
-			len;
-
-	for (pipe=nrf24l01_prx_pipe_available();
-			pipe!=NRF24L01_NO_PIPE;
-			pipe=nrf24l01_prx_pipe_available()) {
-		len = nrf24l01_prx_data(&data, sizeof(data));
-		if (len == NRF24_JOIN_PW_SIZE && pipe == BROADCAST &&
-			data.hdr.msg_type == NRF24_MSG_JOIN_RESULT &&
-			data.hdr.net_addr == m_payload.hdr.net_addr &&
-			data.msg.join.hashid == m_payload.msg.join.hashid &&
-			data.msg.join.result == NRF24_NO_JOIN) {
-			return eJOIN_NO;
-		}
-	}
-
-	if (tline_out(tline_ms(), start, JOIN_TIMEOUT)) {
-		return eJOIN_TIMEOUT;
-	}
-
-	return eJOIN_PENDING;
-}
-
 static int prx_service(void)
 {
 	nrf24_payload	data;
@@ -227,7 +218,7 @@ static int prx_service(void)
 		if (len >= sizeof(data.hdr)) {
 			switch (data.hdr.msg_type) {
 			case NRF24_MSG_JOIN_LOCAL:
-				if (len != NRF24_JOIN_PW_SIZE || pipe != BROADCAST ||
+				if (len != NRF24_JOIN_PW_SIZE || pipe != BROADCAST || data.hdr.offset != 0 ||
 					data.msg.join.maj_version > NRF24_VERSION_MAJOR ||
 					data.msg.join.min_version > NRF24_VERSION_MINOR) {
 					break;
@@ -237,8 +228,8 @@ static int prx_service(void)
 				if (pentry == NULL) {
 					int pipe_free = get_pipe_free();
 					if (pipe_free == NRF24L01_NO_PIPE) {
-						data.msg.join.result == NRF24_NO_JOIN;
-						put_ptx_queue(&data, len);
+						data.msg.join.result == NRF24_ECONNREFUSED;
+						put_ptx_queue(build_data(&data, len, NULL));
 						break;
 					}
 					pc = g_new0(client_t, 1);
@@ -259,12 +250,12 @@ static int prx_service(void)
 					m_pclients = g_slist_append(m_pclients, pc);
 					eventfd_write(m_fd, 1);
 				} else {
-					pc = pentry->data;
+					pc = (client_t*)pentry->data;
 				}
 				pc->heartbeat_sec = tline_sec();
 				data.msg.join.pipe = pc->pipe;
 				data.msg.join.result == NRF24_SUCCESS;
-				put_ptx_queue(&data, len);
+				put_ptx_queue(build_data(&data, len, NULL));
 				break;
 
 			case NRF24_MSG_JOIN_GATEWAY:
@@ -272,22 +263,41 @@ static int prx_service(void)
  					break;
 				}
 				data.hdr.msg_type = NRF24_MSG_JOIN_RESULT;
-				data.msg.join.result == NRF24_NO_JOIN;
-				put_ptx_queue(&data, len);
+				data.msg.join.result == NRF24_ECONNREFUSED;
+				put_ptx_queue(build_data(&data, len, NULL));
 				break;
 
-			case NRF24_MSG_UNJOIN_LOCAL:
-			case NRF24_MSG_JOIN_RESULT:
 			case NRF24_MSG_HEARTBEAT:
+				if (len != NRF24_JOIN_PW_SIZE || data.hdr.offset != 0 ||
+					data.msg.join.maj_version > NRF24_VERSION_MAJOR ||
+					data.msg.join.min_version > NRF24_VERSION_MINOR) {
+					break;
+				}
+				data.hdr.msg_type = NRF24_MSG_JOIN_RESULT;
+				data.msg.join.result == NRF24_ECONNREFUSED;
+				pentry = g_slist_find_custom(m_pclients, &data, join_match);
+				if (pentry != NULL) {
+					pc = (client_t*)pentry->data;
+					if(pc ->pipe == pipe && pc ->pipe == data.msg.join.pipe) {
+						pc->heartbeat_sec = tline_sec();
+						data.msg.join.result == NRF24_SUCCESS;
+					}
+				}
+				put_ptx_queue(build_data(&data, len, NULL));
+				break;
+
 			case NRF24_MSG_APPMSG:
 				break;
+
+			//case NRF24_MSG_UNJOIN_LOCAL:
+			//case NRF24_MSG_JOIN_RESULT:
 			}
 		}
 	}
 	return ePRX;
 }
 
-static int build_join_msg(void)
+static data_t *build_join_msg(void)
 {
 	nrf24_join_local join;
 
@@ -297,53 +307,88 @@ static int build_join_msg(void)
 
 	srand((unsigned int)time(NULL));
 	join.hashid = rand() ^ (rand() * 65536);
-	return build_payload(rand() ^ rand(),
-											NRF24_MSG_JOIN_GATEWAY,
-											0,
-											&join,
-											sizeof(join));
+	return build_ptx_payload(rand() ^ rand(),
+													NRF24_MSG_JOIN_GATEWAY,
+													0,
+													&join,
+													sizeof(join));
+}
+
+static int join_read(ulong_t start)
+{
+	nrf24_payload	data,
+								*join_payload = (nrf24_payload*)&m_join_data->raw;
+	int	pipe,
+			len;
+
+	for (pipe=nrf24l01_prx_pipe_available();
+			pipe!=NRF24L01_NO_PIPE;
+			pipe=nrf24l01_prx_pipe_available()) {
+		len = nrf24l01_prx_data(&data, sizeof(data));
+		if (len == NRF24_JOIN_PW_SIZE && pipe == BROADCAST &&
+			data.hdr.msg_type == NRF24_MSG_JOIN_RESULT &&
+			data.hdr.offset == 0 &&
+			data.hdr.net_addr == join_payload->hdr.net_addr &&
+			data.msg.join.hashid == join_payload->msg.join.hashid &&
+			data.msg.join.result == NRF24_ECONNREFUSED) {
+			return eJOIN_ECONNREFUSED;
+		}
+	}
+
+	if (tline_out(tline_ms(), start, JOIN_TIMEOUT)) {
+		return eJOIN_TIMEOUT;
+	}
+
+	return eJOIN_PENDING;
 }
 
 static int join(bool reset)
 {
 	static int	state = eJOIN,
 					 	retry = JOIN_RETRY,
-					 	ch = NRF24L01_CHANNEL_DEFAULT;
+					 	ch = 0,
+					 	ch0 = 0;
 	static ulong_t	start = 0,
 								delay = 0;
 
 	if (reset) {
-		m_payload_len = build_join_msg();
-		ch = m_channel;
+		ch = nrf24l01_get_channel();
+		ch0 = ch;
 		retry = JOIN_RETRY;
 		state = eJOIN;
 	}
 
 	switch(state) {
 	case eJOIN:
+		if (m_join_data == NULL) {
+			return eJOIN_CHANNEL_BUSY;
+		}
 		nrf24l01_set_ptx(BROADCAST);
-		nrf24l01_ptx_data(&m_payload, m_payload_len, false);
+		nrf24l01_ptx_data(&m_join_data->raw, m_join_data->len, false);
 		nrf24l01_ptx_empty();
 		nrf24l01_set_prx();
 		start = tline_ms();
 		state = eJOIN_PENDING;
 		break;
+
 	case eJOIN_PENDING:
 		state = join_read(start);
 		break;
-	case eJOIN_NO:
+
+	case eJOIN_ECONNREFUSED:
 		nrf24l01_set_standby();
 		ch += 2;
-		if (ch == m_channel) {
-			return eJOIN_NO_CHANNELS;
-		}
 		if (nrf24l01_set_channel(ch) == ERROR) {
 			ch = CH_MIN;
 			nrf24l01_set_channel(ch);
 		}
+		if(ch == ch0) {
+			return eJOIN_CHANNEL_BUSY;
+		}
 		retry = JOIN_RETRY;
 		state = eJOIN;
 		break;
+
 	case eJOIN_TIMEOUT:
 		if (--retry == 0) {
 			return ePRX;
@@ -353,6 +398,7 @@ static int join(bool reset)
 		delay = get_delay_random();
 		start = tline_ms();
 		break;
+
 	case eJOIN_INTERMITION:
 		if (tline_out(tline_ms(), start, delay)) {
 			state = eJOIN;
@@ -381,17 +427,21 @@ void nrf24l01_server_service(void)
 			memset(m_pipes, 0, sizeof(m_pipes));
 			m_state = eUNKNOWN;
 			break;
+
 		case eOPEN:
 			nrf24l01_open_pipe(BROADCAST);
 			m_state = join(true);
 			break;
+
 		case eJOIN:
 			m_state = join(false);
 			break;
-		case eJOIN_NO_CHANNELS:
+
+		case eJOIN_CHANNEL_BUSY:
 			m_state = eCLOSE;
 			eventfd_write(m_fd, 1);
 			break;
+
 		case ePRX:
 			m_state = prx_service();
 			break;
@@ -417,7 +467,12 @@ int nrf24l01_server_open(int socket, int channel)
 		return ERROR;
 	}
 
-	m_channel = channel;
+	m_join_data = build_join_msg();
+	if (m_join_data == NULL) {
+		errno = ENOMEM;
+		return ERROR;
+	}
+
 	m_naccept = 0;
 	m_fd = socket;
 	nrf24l01_server_service();
@@ -433,18 +488,13 @@ int nrf24l01_server_close(int socket)
 
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
+		eventfd_write(socket, INVALID_EVENTFD);
+		nrf24l01_server_service();
+		g_free(m_join_data);
+		m_join_data = NULL;
 	} else {
-		uint8_t data = sCLOSE;
-		write(socket, &data, sizeof(data));
 		close(socket);
-//		GSList *pentry = g_slist_find_custom(m_pclients, &socket, fdcli_match);
-//		if (pentry == NULL && ((client_t*)pentry->data)->fds.cli == SOCKET_INVALID) {
-//			errno = EBADF;
-//			return ERROR;
-//		}
-//		client_close(pentry->data, NULL);
 	}
-	nrf24l01_server_service();
 	return SUCCESS;
 }
 
@@ -461,12 +511,17 @@ int nrf24l01_server_accept(int socket)
 	while (pentry == NULL) {
 		if (m_naccept == 0) {
 		   st = eventfd_read(socket, &m_naccept);
-		   if (st < 0) {
+		   if (st < 0 && m_naccept == INVALID_EVENTFD) {
+				if (m_naccept == INVALID_EVENTFD) {
+					m_naccept = 0;
+					errno = EBADF;
+				}
 				st = ERROR;
 				break;
 		   }
 		   if (m_state == eCLOSE || m_state == eUNKNOWN) {
-				errno = EBADF;
+				m_naccept = 0;
+				errno = ECONNREFUSED;
 				st = ERROR;
 				break;
 		   }
@@ -488,8 +543,15 @@ int nrf24l01_server_accept(int socket)
 
 int nrf24l01_server_available(int socket)
 {
-	nrf24l01_server_service();
-	return SUCCESS;
+	if (socket == SOCKET_INVALID) {
+		errno = EBADF;
+		return ERROR;
+	}
+
+	//returns: 1 for socket available,
+	//				 0 for no available,
+	//				 or -1 for errors.
+	return poll_fd(socket, AVAILABLE_POLLTIME_NS);
 }
 
 #endif		// #ifndef ARDUINO)

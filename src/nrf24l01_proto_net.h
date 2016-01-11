@@ -13,7 +13,7 @@
 #define NRF24_SUCCESS						0
 #define NRF24_ERROR							-1
 #define NRF24_INVALID_VERSION		-2
-#define NRF24_NO_JOIN							-3
+#define NRF24_ECONNREFUSED		-3
 
 // Protocol version
 #define NRF24_VERSION_MAJOR		01

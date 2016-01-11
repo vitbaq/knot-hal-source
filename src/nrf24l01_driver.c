@@ -20,8 +20,6 @@ int errno = SUCCESS;
 
 #define NRF24L01_DRIVER_NAME		"nRF24L01 driver"
 
-#define NRF24L01_CHANNEL				NRF24L01_CHANNEL_DEFAULT
-
 enum {
 	eINVALID,
 	eUNKNOWN,
@@ -62,30 +60,29 @@ static int nrf24_close(int socket)
 	}
 
 #ifndef ARDUINO
+	if (state == eSERVER) {
+		return nrf24l01_server_close(socket);
+	} else if (state == eCLIENT) {
+			//return nrf24l01_client_close(socket);
+	}
 	if (socket == m_fd) {
 		close(m_fd);
 		m_fd = SOCKET_INVALID;
 		m_state =  eUNKNOWN;
 	}
+#else
 	if (state == eCLIENT) {
 		//return nrf24l01_client_close(socket);
 	}
-	if (state == eSERVER) {
-		return nrf24l01_server_close(socket);
-	}
-#else
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
 		m_state =  eUNKNOWN;
-	}
-	if (state == eCLIENT) {
-		//return nrf24l01_client_close(socket);
 	}
 #endif
 	return SUCCESS;
 }
 
-static int nrf24_listen(int socket)
+static int nrf24_listen(int socket, int channel)
 {
 #ifndef ARDUINO
 	int result;
@@ -99,7 +96,10 @@ static int nrf24_listen(int socket)
 		return ERROR;
 	}
 
-	result = nrf24l01_server_open(socket, NRF24L01_CHANNEL);
+	if(channel < CH_MIN)
+		channel = NRF24L01_CHANNEL_DEFAULT;
+
+	result = nrf24l01_server_open(socket, channel);
 	if (result == SUCCESS) {
 		m_state = eSERVER;
 	}

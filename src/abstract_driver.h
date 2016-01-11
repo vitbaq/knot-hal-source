@@ -22,8 +22,8 @@ extern "C"{
 #endif
 
 #ifdef ARDUINO
-#define	EPERM			1	/* Operation not permitted */
-#define	EBADF			9	/* Bad file number */
+#define	EPERM			1		/* Operation not permitted */
+#define	EBADF			9		/* Bad file number */
 #define	EAGAIN			11	/* Try again */
 #define	ENOMEM		12	/* Out of memory */
 #define	EACCES		13	/* Permission denied */
@@ -50,7 +50,7 @@ extern int errno;
 typedef struct {
 	int (*socket) (void);
 	int (*close) (int sockfd);
-	int (*listen) (int sockfd);
+	int (*listen) (int sockfd, int backlog);
 	int (*accept) (int srv_sockfd);
 	int (*connect) (int cli_sockfd, const void *addr, size_t len);
 

@@ -17,7 +17,7 @@
  */
 #define NRF24L01_POWER							PWR_0DBM		// Output power in max power
 #define NRF24L01_DATA_RATE					DR_1MBPS		// Data rate to 1Mbps
-#define NRF24L01_CHANNEL_DEFAULT	32						// Channel = 2400Ghz + CHANNEL_DEF [Mhz]
+#define NRF24L01_CHANNEL_DEFAULT	CH_MIN				// Channel = 2400Ghz + CHANNEL_DEF [Mhz]
 #define NRF24L01_ARC									5							// Auto retransmit count = 5 attempt
 #define NRF24L01_ADDR_WIDTHS				5							// Address width is 5 bytes
 
