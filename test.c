@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <string.h>
+#include <errno.h>
 
 #include "config.h"
 #include "abstract_driver.h"
@@ -146,6 +148,8 @@ int main(int argc, char **argv)
 {
 	int g,rep, timeout;
 
+	int fdsrv, fdcli;
+
 	puts ("Hello C World!");
 	printf("This is " PACKAGE_STRING "\n");
 	printf("Driver name=%s\n" , nrf24l01_driver.name);
@@ -164,7 +168,7 @@ int main(int argc, char **argv)
 	printf("sizeof(int)=%ld\n", sizeof(int));
 
 	// Set up gpi pointer for direct register access
-	setup_io();
+//	setup_io();
 
 	// Switch GPIO 7..11 to output mode
 
@@ -182,27 +186,51 @@ int main(int argc, char **argv)
 		//OUT_GPIO(25);
 //	}
 
-	printf("gpio %p\n", gpio);
-
-	for (rep=0; rep<10; rep++)
-	{
-//	for (g=7; g<=11; g++)
+//	printf("gpio %p\n", gpio);
+//
+//	for (rep=0; rep<10; rep++)
 //	{
-		GPIO_SET = 1<<CE;
-		sleep(1);
+////	for (g=7; g<=11; g++)
+////	{
+//		GPIO_SET = 1<<CE;
+//		sleep(1);
+////	}
+////	for (g=7; g<=11; g++)
+////	{
+//		GPIO_CLR = 1<<CE;
+//		sleep(1);
+////	}
 //	}
-//	for (g=7; g<=11; g++)
-//	{
-		GPIO_CLR = 1<<CE;
-		sleep(1);
-//	}
-	}
+//
+//	nrf24l01_driver.probe();
+//	printf("CE on\n");
+//	nrf24l01_ce_on();
+//	nrf24l01_driver.remove();
 
 	nrf24l01_driver.probe();
-	printf("CE on\n");
-	nrf24l01_ce_on();
+
+	fdsrv = nrf24l01_driver.socket();
+	if (fdsrv == ERROR) {
+		printf("socket(%d): %s", errno, strerror(errno));
+		nrf24l01_driver.remove();
+		return 1;
+	}
+
+	if (nrf24l01_driver.listen(fdsrv, 10) == ERROR) {
+		printf("listen(%d): %s", errno, strerror(errno));
+		nrf24l01_driver.close(fdsrv);
+		nrf24l01_driver.remove();
+		return 2;
+	}
+
+	fdcli = nrf24l01_driver.accept(fdsrv);
+	if (fdcli == ERROR) {
+		printf("accept(%d): %s", errno, strerror(errno));
+	} else {
+		nrf24l01_driver.close(fdcli);
+	}
+
+	nrf24l01_driver.close(fdsrv);
 	nrf24l01_driver.remove();
-
 	return 0;
-
 } // main
