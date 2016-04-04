@@ -18,7 +18,6 @@
 extern "C"{
 #endif
 
-void nrf24l01_server_service(void);
 int nrf24l01_server_open(int socket, int channel);
 int nrf24l01_server_close(int socket);
 int nrf24l01_server_accept(int socket);

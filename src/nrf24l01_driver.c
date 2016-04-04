@@ -227,7 +227,7 @@ static void nrf24_service(void)
 	}
 #ifndef ARDUINO
 	if (m_state == eSERVER) {
-		nrf24l01_server_service();
+		//nrf24l01_server_service();
 	}
 #endif
 }

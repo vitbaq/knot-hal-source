@@ -27,6 +27,8 @@
 
 #define AVAILABLE_POLLTIME_NS	1000000	//1ms
 
+#define TIMEOUT_SERVICE_THREAD	 1				//1ms
+
 #define INVALID_EVENTFD		((eventfd_t)-2)
 
 enum {
@@ -75,6 +77,8 @@ static GSList					*m_pclients = NULL,
 static client_t				*m_pipes[NRF24L01_PIPE_MAX] =  { NULL, NULL, NULL, NULL, NULL };
 static eventfd_t			m_naccept = 0;
 static data_t					*m_join_data = NULL;
+
+GThread *m_gthread = NULL;
 
 static void client_free(gpointer pentry)
 {
@@ -408,8 +412,10 @@ static int join(bool reset)
 	return eJOIN;
 }
 
-void nrf24l01_server_service(void)
+static gboolean server_service(gpointer dummy)
 {
+	gboolean result = G_SOURCE_CONTINUE;
+
 	if (++m_nref == 1) {
 		if (m_fd == SOCKET_INVALID && m_state != eUNKNOWN) {
 			m_state = eCLOSE;
@@ -426,6 +432,7 @@ void nrf24l01_server_service(void)
 			}
 			memset(m_pipes, 0, sizeof(m_pipes));
 			m_state = eUNKNOWN;
+			result = G_SOURCE_REMOVE;
 			break;
 
 		case eOPEN:
@@ -448,6 +455,22 @@ void nrf24l01_server_service(void)
 		}
 	}
 	--m_nref;
+	return result;
+}
+
+static gpointer service_thread(gpointer dummy)
+{
+    GMainLoop *loop;
+    GSource *timer;
+    GMainContext *context = g_main_context_new();
+
+    g_main_context_push_thread_default(context);
+    loop = g_main_loop_new(context, FALSE);
+    timer = g_timeout_source_new(TIMEOUT_SERVICE_THREAD);
+    g_source_set_callback(timer, server_service, NULL, NULL);
+    g_source_attach(timer, context);
+    g_main_loop_run(loop);
+    return NULL;
 }
 
 int nrf24l01_server_open(int socket, int channel)
@@ -475,7 +498,15 @@ int nrf24l01_server_open(int socket, int channel)
 
 	m_naccept = 0;
 	m_fd = socket;
-	nrf24l01_server_service();
+
+	m_gthread = g_thread_new("service_thread", service_thread, NULL);
+	if (m_gthread == NULL) {
+		g_free(m_join_data);
+		m_join_data = NULL;
+		errno = ENOMEM;
+		return ERROR;
+	}
+
 	return SUCCESS;
 }
 
@@ -489,7 +520,10 @@ int nrf24l01_server_close(int socket)
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
 		eventfd_write(socket, INVALID_EVENTFD);
-		nrf24l01_server_service();
+		if (m_gthread != NULL) {
+			g_thread_join(m_gthread);
+			m_gthread == NULL;
+		}
 		g_free(m_join_data);
 		m_join_data = NULL;
 	} else {
@@ -537,7 +571,6 @@ int nrf24l01_server_accept(int socket)
 			((client_t*)pentry->data)->state = ePRX;
 		}
 	}
-	nrf24l01_server_service();
 	return st;
 }
 
