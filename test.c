@@ -150,22 +150,22 @@ int main(int argc, char **argv)
 
 	int fdsrv, fdcli;
 
-	puts ("Hello C World!");
-	printf("This is " PACKAGE_STRING "\n");
-	printf("Driver name=%s\n" , nrf24l01_driver.name);
-
-	/* Intializes random number generator */
-	srand((unsigned)time(NULL));
-	timeout = ((rand() % 50) + 1)  * 20;
-	srand((unsigned)time(NULL));
-	printf("addr=%#04x - %#08x timeout=%d\n", (rand() ^ rand()) & 0xffff, 	rand() ^ (rand() * 65536), timeout);
-
-	printf("sizeof(len_t)=%ld max=%lu\n", sizeof(len_t), LEN_T_MAX);
-	printf("sizeof(int_t)=%ld\n", sizeof(int_t));
-	printf("sizeof(result_t)=%ld\n", sizeof(result_t));
-	printf("sizeof(param_t)=%ld\n", sizeof(int_t));
-	printf("sizeof(long unsigned int)=%ld\n", sizeof(long unsigned int));
-	printf("sizeof(int)=%ld\n", sizeof(int));
+//	puts ("Hello C World!");
+//	printf("This is " PACKAGE_STRING "\n");
+//	printf("Driver name=%s\n" , nrf24l01_driver.name);
+//
+//	/* Intializes random number generator */
+//	srand((unsigned)time(NULL));
+//	timeout = ((rand() % 50) + 1)  * 20;
+//	srand((unsigned)time(NULL));
+//	printf("addr=%#04x - %#08x timeout=%d\n", (rand() ^ rand()) & 0xffff, 	rand() ^ (rand() * 65536), timeout);
+//
+//	printf("sizeof(len_t)=%ld max=%lu\n", sizeof(len_t), LEN_T_MAX);
+//	printf("sizeof(int_t)=%ld\n", sizeof(int_t));
+//	printf("sizeof(result_t)=%ld\n", sizeof(result_t));
+//	printf("sizeof(param_t)=%ld\n", sizeof(int_t));
+//	printf("sizeof(long unsigned int)=%ld\n", sizeof(long unsigned int));
+//	printf("sizeof(int)=%ld\n", sizeof(int));
 
 	// Set up gpi pointer for direct register access
 //	setup_io();

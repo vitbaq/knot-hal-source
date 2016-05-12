@@ -141,6 +141,27 @@ static volatile unsigned				*gpio;
  * Local operation functions
  */
 
+static int dump_data(void *pdata, int len)
+{
+    int i, off, col, n;
+    unsigned char *pd = pdata;
+    char buff[256];
+
+    for (off = n = 0; off < len; off += 16) {
+        n = sprintf(buff, "\t [%04x]", off);
+        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
+            n += sprintf(buff + n, " %02lX", (ulong)pd[i]);
+        // if (col != 0 && off != 0)
+        for (; col != 0; --col)
+            n += sprintf(buff + n, "   ");
+        n += sprintf(buff + n, " - ");
+        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
+            n += sprintf(buff + n, "%c", pd[i] >= ' ' && pd[i] < 0x7f ? pd[i] : '.');
+        printf("%s\r\n", buff);
+    }
+    return 0;
+}
+
 static inline void enable(void)
 {
 	GPIO_SET = (1<<CE);
@@ -361,7 +382,7 @@ result_t	nrf24l01_init(void)
 	outr(EN_RXADDR, inr(EN_RXADDR) & ~EN_RXADDR_MASK);
 
 	// enable dynamic payload to all pipes
-	outr(FEATURE, (inr(FEATURE) & ~FEATURE_MASK) | FT_EN_DPL);
+	outr(FEATURE, (inr(FEATURE) & ~FEATURE_MASK) | FT_EN_DPL | FT_EN_ACK_PAY | FT_EN_DYN_ACK);
 	value = inr(DYNPD) & ~DYNPD_MASK;
 	outr(DYNPD, value | (DPL_P5 | DPL_P4 | DPL_P3 | DPL_P2 | DPL_P1 | DPL_P0));
 
@@ -395,9 +416,9 @@ result_t nrf24l01_set_channel(byte_t ch)
 
 	if (ch != CH(inr(RF_CH))) {
 		set_standby1(0);
+		outr(STATUS, ST_RX_DR | ST_TX_DS | ST_MAX_RT);
 		command(FLUSH_TX);
 		command(FLUSH_RX);
-		outr(STATUS, inr(STATUS) | (ST_RX_DR | ST_TX_DS | ST_MAX_RT));
 		// Set the device channel
 		outr(RF_CH, CH(_CONSTRAIN(ch, CH_MIN, max)));
 	}
@@ -476,9 +497,13 @@ result_t nrf24l01_set_prx(void)
 
 result_t nrf24l01_prx_pipe_available(void)
 {
-	byte_t pipe = ST_RX_P_NO(inr(STATUS));
-	if (pipe > NRF24L01_PIPE_MAX) {
-		pipe = NRF24L01_NO_PIPE;
+	byte_t pipe = NRF24L01_NO_PIPE;
+
+	if (!(inr(FIFO_STATUS) & FIFO_RX_EMPTY)) {
+		pipe = ST_RX_P_NO(inr(STATUS));
+		if (pipe > NRF24L01_PIPE_MAX) {
+			pipe = NRF24L01_NO_PIPE;
+		}
 	}
 	return (result_t)pipe;
 }
@@ -520,22 +545,25 @@ result_t nrf24l01_set_ptx(byte_t pipe)
 	set_address_pipe(TX_ADDR, pipe);
 	outr(CONFIG, inr(CONFIG) & ~CFG_PRIM_RX);
 	outr(STATUS, ST_TX_DS | ST_MAX_RT);
-	m_mode == TX_MODE;
+	m_mode = TX_MODE;
 	enable();
 	return command(NOP);
 }
 
 result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack)
 {
+	static uint8_t raw[NRF24L01_PAYLOAD_SIZE];
+
 	if (m_mode != TX_MODE || pdata == NULL ||
 		 len == 0 || len > NRF24L01_PAYLOAD_SIZE) {
 		return ERROR;
 	}
 
-	return command_data(!ack ? W_TX_PAYLOAD_NO_ACK : W_TX_PAYLOAD, pdata, len);
+	memcpy(raw, pdata, len);
+	return command_data(!ack ? W_TX_PAYLOAD_NOACK : W_TX_PAYLOAD, raw, len);
 }
 
-result_t nrf24l01_ptx_empty(void)
+result_t nrf24l01_ptx_wait_datasent(void)
 {
 	if (m_mode != TX_MODE) {
 		return ERROR;
@@ -544,6 +572,30 @@ result_t nrf24l01_ptx_empty(void)
 	while(!(inr(FIFO_STATUS) & FIFO_TX_EMPTY)) {
 		asm("nop");
 		asm("nop");
+		if (inr(STATUS & ST_MAX_RT)) {
+			outr(STATUS, ST_MAX_RT);
+			command(FLUSH_TX);
+			return ERROR;
+		}
 	}
+
 	return SUCCESS;
+}
+
+result_t nrf24l01_ptx_isempty(void)
+{
+	if (m_mode != TX_MODE) {
+		return true;
+	}
+
+	return((inr(FIFO_STATUS) & FIFO_TX_EMPTY) != 0);
+}
+
+result_t nrf24l01_ptx_isfull(void)
+{
+	if (m_mode != TX_MODE) {
+		return false;
+	}
+
+	return((inr(FIFO_STATUS) & FIFO_TX_FULL) != 0);
 }

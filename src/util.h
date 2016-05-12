@@ -81,7 +81,7 @@ int tline_out(ulong_t time,  ulong_t last,  ulong_t timeout);
 /**
  * \brief Print buffer in formated HEX values
  * */
-int dump_data(const char *str, int port, unsigned char *pd, int len);
+int dump_data(const char *str, int port, void *pdata, int len);
 
 #ifdef __cplusplus
 } // extern "C"

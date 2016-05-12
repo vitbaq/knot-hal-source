@@ -30,7 +30,8 @@
 #define NRF24_MSG_JOIN_GATEWAY	0x03
 #define NRF24_MSG_JOIN_RESULT		0x04
 #define NRF24_MSG_HEARTBEAT			0x05
-#define NRF24_MSG_APPMSG					0x06
+#define NRF24_MSG_APP							0x06
+#define NRF24_MSG_APP_FRAG				0x07
 
 /**
  * struct nrf24_header - net layer message header

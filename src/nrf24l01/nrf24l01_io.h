@@ -220,7 +220,7 @@
 #define R_REGISTER(r)							(0b00000000 | (r & REGISTER_MASK))
 #define W_REGISTER(r)							(0b00100000 | (r & REGISTER_MASK))
 
-#define R_RX_PAYLOAD							0b01100000
+#define R_RX_PAYLOAD							0b01100001
 
 #define W_TX_PAYLOAD							0b10100000
 
@@ -234,7 +234,7 @@
 #define W_ACK_PAYLOAD_MASK		0b00000111	// 3 bit ack payload on pipe: 0 <= p <= 5 valid value
 #define W_ACK_PAYLOAD(p)					(0b10101000 | (p &  W_ACK_PAYLOAD_MASK))
 
-#define W_TX_PAYLOAD_NO_ACK		0b10110000
+#define W_TX_PAYLOAD_NOACK		0b10110000
 
 #define NOP													0b11111111
 

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -v
 # copy files source to buildroot to the fast compile
 
 if [ ! -n "$1" ]; then
