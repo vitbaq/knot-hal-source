@@ -78,7 +78,11 @@ static inline void disable(void)
 
 static inline void io_setup()
 {
+	// PB1 = 0 (digital PIN 9) => CE = 0
+	// standby-l mode
 	PORTB &= ~(1 << CE);
+
+	// PB1 as output
 	DDRB |= (1 << CE);
 
 	disable();
