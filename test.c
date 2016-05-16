@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
 
 #include "config.h"
 #include "abstract_driver.h"
@@ -144,11 +145,17 @@ void printButton(int g)
     printf("Button released!\n");
 }
 
+int fdsrv, fdcli;
+
+static void sig_term(int sig)
+{
+	printf("SIG TERM\n");
+	nrf24l01_driver.cancel(fdsrv);
+}
+
 int main(int argc, char **argv)
 {
 	int g,rep, timeout;
-
-	int fdsrv, fdcli;
 
 //	puts ("Hello C World!");
 //	printf("This is " PACKAGE_STRING "\n");
@@ -207,17 +214,21 @@ int main(int argc, char **argv)
 //	nrf24l01_ce_on();
 //	nrf24l01_driver.remove();
 
+	printf("TEST PROGRAM\n");
+	signal(SIGTERM, sig_term);
+	signal(SIGINT, sig_term);
+
 	nrf24l01_driver.probe();
 
 	fdsrv = nrf24l01_driver.socket();
 	if (fdsrv == ERROR) {
-		printf("socket(%d): %s", errno, strerror(errno));
+		printf("socket(%d): %s\n", errno, strerror(errno));
 		nrf24l01_driver.remove();
 		return 1;
 	}
 
 	if (nrf24l01_driver.listen(fdsrv, 10) == ERROR) {
-		printf("listen(%d): %s", errno, strerror(errno));
+		printf("listen(%d): %s\n", errno, strerror(errno));
 		nrf24l01_driver.close(fdsrv);
 		nrf24l01_driver.remove();
 		return 2;
@@ -225,7 +236,7 @@ int main(int argc, char **argv)
 
 	fdcli = nrf24l01_driver.accept(fdsrv);
 	if (fdcli == ERROR) {
-		printf("accept(%d): %s", errno, strerror(errno));
+		printf("accept(%d): %s\n", errno, strerror(errno));
 	} else {
 		nrf24l01_driver.close(fdcli);
 	}

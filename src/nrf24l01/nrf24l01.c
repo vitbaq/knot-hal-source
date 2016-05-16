@@ -261,7 +261,7 @@ static void set_address_pipe(byte_t reg, byte_t pipe)
 
 static result_t set_standby1(byte_t pipe)
 {
-	if (m_mode == UNKNOWN_MODE) {
+	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return ERROR;
 	}
 
@@ -281,7 +281,7 @@ static result_t set_standby1(byte_t pipe)
 /*	-----------------------------------
  * Public operation functions
  */
-//>>>>>>>>>>
+//------------------->>>>>>>>>>
 // TODO: functions to test, we can remove them on development end
 result_t nrf24l01_inr(byte_t reg)
 {
@@ -322,13 +322,13 @@ void nrf24l01_set_address_pipe(byte_t reg, byte_t pipe)
 {
 	set_address_pipe(reg, pipe);
 }
-//<<<<<<<<<<
+//<<<<<<<<<<-------------------
 
 result_t nrf24l01_deinit(void)
 {
 	int_t		value;
 
-	if (m_mode == UNKNOWN_MODE) {
+	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return SUCCESS;
 	}
 
@@ -344,7 +344,7 @@ result_t	nrf24l01_init(void)
 {
 	byte_t		value;
 
-	if (m_mode != UNKNOWN_MODE) {
+	if (unlikely(m_mode != UNKNOWN_MODE)) {
 		return SUCCESS;
 	}
 
@@ -406,12 +406,12 @@ result_t nrf24l01_set_channel(byte_t ch)
 {
 	byte_t max;
 
-	if (m_mode == UNKNOWN_MODE) {
+	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return ERROR;
 	}
 
 	max = RF_DR(inr(RF_SETUP)) == DR_2MBPS ? CH_MAX_2MBPS : CH_MAX_1MBPS;
-	if (ch != _CONSTRAIN(ch, CH_MIN, max))
+	if (unlikely(ch != _CONSTRAIN(ch, CH_MIN, max)))
 		return ERROR;
 
 	if (ch != CH(inr(RF_CH))) {
@@ -427,7 +427,7 @@ result_t nrf24l01_set_channel(byte_t ch)
 
 result_t nrf24l01_get_channel(void)
 {
-	if (m_mode == UNKNOWN_MODE) {
+	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return ERROR;
 	}
 
@@ -438,7 +438,7 @@ result_t nrf24l01_open_pipe(byte_t pipe)
 {
 	pipe_reg_t rpipe;
 
-	if (m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX) {
+	if (unlikely(m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX)) {
 		return ERROR;
 	}
 
@@ -456,7 +456,7 @@ result_t nrf24l01_close_pipe(byte_t pipe)
 {
 	pipe_reg_t rpipe;
 
-	if (m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX) {
+	if (unlikely(m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX)) {
 		return ERROR;
 	}
 
@@ -472,7 +472,7 @@ result_t nrf24l01_close_pipe(byte_t pipe)
 
 result_t nrf24l01_set_standby(void)
 {
-	if (m_mode == UNKNOWN_MODE) {
+	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return ERROR;
 	}
 
@@ -482,7 +482,7 @@ result_t nrf24l01_set_standby(void)
 
 result_t nrf24l01_set_prx(void)
 {
-	if (m_mode == UNKNOWN_MODE) {
+	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return ERROR;
 	}
 
@@ -513,7 +513,7 @@ result_t nrf24l01_prx_data(pdata_t pdata, len_t len)
 {
 	len_t		rxlen = 0;
 
-	if (m_mode != RX_MODE || pdata == NULL || len == 0) {
+	if (unlikely(m_mode != RX_MODE || pdata == NULL || len == 0)) {
 		return ERROR;
 	}
 
@@ -533,7 +533,7 @@ result_t nrf24l01_prx_data(pdata_t pdata, len_t len)
 
 result_t nrf24l01_set_ptx(byte_t pipe)
 {
-	if (m_mode == UNKNOWN_MODE) {
+	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return ERROR;
 	}
 
@@ -554,8 +554,8 @@ result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack)
 {
 	static uint8_t raw[NRF24L01_PAYLOAD_SIZE];
 
-	if (m_mode != TX_MODE || pdata == NULL ||
-		 len == 0 || len > NRF24L01_PAYLOAD_SIZE) {
+	if (unlikely(m_mode != TX_MODE || pdata == NULL ||
+		 len == 0 || len > NRF24L01_PAYLOAD_SIZE)) {
 		return ERROR;
 	}
 
@@ -563,19 +563,16 @@ result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack)
 	return command_data(!ack ? W_TX_PAYLOAD_NOACK : W_TX_PAYLOAD, raw, len);
 }
 
-result_t nrf24l01_ptx_wait_datasent(void)
+result_t nrf24l01_ptx_wait_datasent(bool bmax_rt)
 {
-	if (m_mode != TX_MODE) {
-		return ERROR;
-	}
-
-	while(!(inr(FIFO_STATUS) & FIFO_TX_EMPTY)) {
-		asm("nop");
-		asm("nop");
-		if (inr(STATUS & ST_MAX_RT)) {
-			outr(STATUS, ST_MAX_RT);
-			command(FLUSH_TX);
-			return ERROR;
+	if (m_mode == TX_MODE) {
+		byte_t value;
+		while (!((value=inr(STATUS)) & ST_TX_DS)) {
+			if (value & ST_MAX_RT && bmax_rt) {
+				outr(STATUS, ST_MAX_RT);
+				command(FLUSH_TX);
+				return ERROR;
+			}
 		}
 	}
 
@@ -584,18 +581,10 @@ result_t nrf24l01_ptx_wait_datasent(void)
 
 result_t nrf24l01_ptx_isempty(void)
 {
-	if (m_mode != TX_MODE) {
-		return true;
-	}
-
-	return((inr(FIFO_STATUS) & FIFO_TX_EMPTY) != 0);
+	return (m_mode != TX_MODE || (inr(FIFO_STATUS) & FIFO_TX_EMPTY) != 0);
 }
 
 result_t nrf24l01_ptx_isfull(void)
 {
-	if (m_mode != TX_MODE) {
-		return false;
-	}
-
-	return((inr(FIFO_STATUS) & FIFO_TX_FULL) != 0);
+	return (m_mode != TX_MODE || (inr(FIFO_STATUS) & FIFO_TX_FULL) != 0);
 }

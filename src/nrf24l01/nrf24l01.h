@@ -58,7 +58,7 @@ result_t nrf24l01_prx_pipe_available(void);
 result_t	nrf24l01_prx_data(pdata_t pdata, len_t len);
 result_t	nrf24l01_set_ptx(byte_t pipe);
 result_t	nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack);
-result_t nrf24l01_ptx_wait_datasent(void);
+result_t nrf24l01_ptx_wait_datasent(bool bmax_rt);
 result_t nrf24l01_ptx_isempty(void);
 result_t nrf24l01_ptx_isfull(void);
 

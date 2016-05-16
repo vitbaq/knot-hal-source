@@ -102,9 +102,9 @@
 #define RF_PWR(v)				((v << 1) & RF_PWR_MASK)		// write Power Amplifier(PA) control in TX mode: 0 <= v <= 3 valid values
 																											// and respectively to: -18dBm, -12dBm, -6 dBm and 0dBm
 #define RF_PWR_RD(v)		((v & RF_PWR_MASK) >> 1)		// read
-#define PWR_N18DBM			0b00
-#define PWR_N12DBM			0b01
-#define PWR_N6DBM			0b10
+#define PWR_18DBM			0b00
+#define PWR_12DBM			0b01
+#define PWR_6DBM				0b10
 #define PWR_0DBM				0b11
 
 /* RF status (reset value: 0b00001110) */

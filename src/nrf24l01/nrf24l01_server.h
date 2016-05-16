@@ -22,6 +22,7 @@ int nrf24l01_server_open(int socket, int channel);
 int nrf24l01_server_close(int socket);
 int nrf24l01_server_accept(int socket);
 int nrf24l01_server_available(int socket);
+int nrf24l01_server_cancel(int socket);
 
 #ifdef __cplusplus
 } // extern "C"

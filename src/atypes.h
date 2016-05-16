@@ -48,12 +48,12 @@ typedef void						*pdata_t;
 typedef uint_t					len_t;
 #define	LEN_T_MAX		((uint_fast16_t)-1)
 
-/* Uncomment the line to message trace print via USART */
-#define _TRACE_
-#ifdef _TRACE_
-#define	TRACE	printf
+#ifdef __GNUC__
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
 #else
-#define	TRACE
+#define likely(x)       (x)
+#define unlikely(x)     (x)
 #endif
 
 #ifdef __cplusplus

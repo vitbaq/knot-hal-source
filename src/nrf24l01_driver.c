@@ -167,11 +167,30 @@ static int nrf24_available(int socket)
 	if (m_state == eSERVER) {
 		return nrf24l01_server_available(socket);
 	}
-	errno = EBADF;
-	return ERROR;
-#else
-	return SUCCESS;
 #endif
+	return 0;
+}
+
+static int nrf24_cancel(int socket)
+{
+	if (socket == SOCKET_INVALID) {
+		errno = EBADF;
+		return ERROR;
+	}
+	if (m_state == eUNKNOWN) {
+		errno = EACCES;
+		return ERROR;
+	}
+
+	if (m_state == eCLIENT) {
+		//return nrf24l01_client_cancel(socket);
+	}
+#ifndef ARDUINO
+	if (m_state == eSERVER) {
+		return nrf24l01_server_cancel(socket);
+	}
+#endif
+	return SUCCESS;
 }
 
 static size_t nrf24_recv(int socket, void *buffer, size_t len)
@@ -243,6 +262,7 @@ abstract_driver_t nrf24l01_driver = {
 	.connect = nrf24_connect,
 
 	.available = nrf24_available,
+	.cancel = nrf24_cancel,
 	.recv = nrf24_recv,
 	.send = nrf24_send,
 
