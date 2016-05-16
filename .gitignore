@@ -17,4 +17,6 @@ testc*
 *~
 *m4
 *sh
-
+.settings
+.project
+.cproject
