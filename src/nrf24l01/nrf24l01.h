@@ -18,7 +18,7 @@
 #define NRF24L01_POWER							PWR_0DBM		// Output power in max power
 #define NRF24L01_DATA_RATE					DR_1MBPS		// Data rate to 1Mbps
 #define NRF24L01_CHANNEL_DEFAULT	CH_MIN				// Channel = 2400Ghz + CHANNEL_DEF [Mhz]
-#define NRF24L01_ARC									5							// Auto retransmit count = 5 attempt
+#define NRF24L01_ARC									15						// Auto retransmit count = 15 attempt
 #define NRF24L01_ADDR_WIDTHS				5							// Address width is 5 bytes
 
 #define NRF24L01_PIPE_MIN						0									// pipe min
@@ -26,6 +26,14 @@
 #define NRF24L01_NO_PIPE							RX_FIFO_EMPTY	// invalid pipe
 
 #define NRF24L01_PAYLOAD_SIZE				32
+
+#define NRF24L01_PIPE0_ADDR				0
+#define NRF24L01_PIPE1_ADDR				1
+#define NRF24L01_PIPE2_ADDR				2
+#define NRF24L01_PIPE3_ADDR				3
+#define NRF24L01_PIPE4_ADDR				4
+#define NRF24L01_PIPE5_ADDR				5
+#define NRF24L01_PIPE_ADDR_MAX		NRF24L01_PIPE5_ADDR
 
 #ifdef __cplusplus
 extern "C"{
@@ -50,15 +58,15 @@ result_t	nrf24l01_init(void);
 result_t	nrf24l01_deinit(void);
 result_t	nrf24l01_set_channel(byte_t ch);
 result_t	nrf24l01_get_channel(void);
-result_t	nrf24l01_open_pipe(byte_t pipe);
+result_t	nrf24l01_open_pipe(byte_t pipe, byte_t pipe_addr);
 result_t	nrf24l01_close_pipe(byte_t pipe);
 result_t	nrf24l01_set_standby(void);
 result_t	nrf24l01_set_prx(void);
 result_t nrf24l01_prx_pipe_available(void);
 result_t	nrf24l01_prx_data(pdata_t pdata, len_t len);
-result_t	nrf24l01_set_ptx(byte_t pipe);
+result_t	nrf24l01_set_ptx(byte_t pipe_addr);
 result_t	nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack);
-result_t nrf24l01_ptx_wait_datasent(bool bmax_rt);
+result_t nrf24l01_ptx_wait_datasent();
 result_t nrf24l01_ptx_isempty(void);
 result_t nrf24l01_ptx_isfull(void);
 

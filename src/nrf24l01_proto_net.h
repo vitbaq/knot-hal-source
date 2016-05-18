@@ -20,8 +20,8 @@
 #define NRF24_VERSION_MINOR		00
 
 // Network retransmiting parameters
-#define NRF24_TIMEOUT	250		//miliseconds
-#define NRF24_RETRIES		15
+#define NRF24_TIMEOUT_MS		1000		//miliseconds
+#define NRF24_RETRIES					15
 
 // Network messages
 #define NRF24_MSG_INVALID					0x00
@@ -31,7 +31,8 @@
 #define NRF24_MSG_JOIN_RESULT		0x04
 #define NRF24_MSG_HEARTBEAT			0x05
 #define NRF24_MSG_APP							0x06
-#define NRF24_MSG_APP_FRAG				0x07
+#define NRF24_MSG_APP_FIRST				0x07
+#define NRF24_MSG_APP_FRAG				0x08
 
 /**
  * struct nrf24_header - net layer message header
@@ -44,14 +45,11 @@
 typedef struct __attribute__ ((packed)) {
 	uint16_t		net_addr;
 	uint8_t		msg_type;
-	uint8_t		offset;
 } nrf24_header;
 
 // Network message size parameters
 #define NRF24_PW_SIZE							32
-#define NRF24_MSG_PW_SIZE				(NRF24_PW_SIZE-sizeof(nrf24_header))
-#define NRF24_MSG_MAX_OFFSET	(NRF24_MSG_PW_SIZE*255)
-#define NRF24_MSG_MAX_SIZE			((NRF24_MSG_PW_SIZE*NRF24_MSG_MAX_OFFSET)+NRF24_MSG_PW_SIZE)
+#define NRF24_MSG_PW_SIZE				(NRF24_PW_SIZE - sizeof(nrf24_header))
 
 /**
  * struct nrf24_join_local - net layer join local message
@@ -84,7 +82,5 @@ typedef struct __attribute__ ((packed))  {
 		uint8_t					raw[NRF24_MSG_PW_SIZE];
 	} msg;
 } nrf24_payload;
-
-#define NRF24_JOIN_PW_SIZE		(sizeof(nrf24_header)+sizeof(nrf24_join_local))
 
 #endif //	__NRF24L01_PROTO_NET_H__

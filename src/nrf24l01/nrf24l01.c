@@ -54,6 +54,8 @@ typedef enum {
 
 static en_modes_t m_mode = UNKNOWN_MODE;
 
+static byte_t m_pipe0_addr = NRF24L01_PIPE0_ADDR;
+
 #ifdef ARDUINO
 #include <Arduino.h>
 
@@ -255,15 +257,15 @@ static inline result_t command_data(byte_t cmd, pdata_t pd, len_t len)
 	return command(NOP);
 }
 
-static void set_address_pipe(byte_t reg, byte_t pipe)
+static void set_address_pipe(byte_t reg, byte_t pipe_addr)
 {
-	uint64_t	pipe_addr = (pipe == 0) ? PIPE0_ADDR_BASE : PIPE1_ADDR_BASE;
+	uint64_t	addr = (pipe_addr == NRF24L01_PIPE0_ADDR) ? PIPE0_ADDR_BASE : PIPE1_ADDR_BASE;
 
-	pipe_addr += (pipe << 4) + pipe;
-	outr_data(reg, &pipe_addr, (reg == TX_ADDR || pipe < 2) ? AW_RD(inr(SETUP_AW)) : DATA_SIZE);
+	addr += (pipe_addr << 4) + pipe_addr;
+	outr_data(reg, &addr, (reg == TX_ADDR || reg == RXADDR_P0 || reg == RXADDR_P1) ? AW_RD(inr(SETUP_AW)) : DATA_SIZE);
 }
 
-static result_t set_standby1(byte_t pipe)
+static result_t set_standby1()
 {
 	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return ERROR;
@@ -277,8 +279,8 @@ static result_t set_standby1(byte_t pipe)
 		// delay time to Tpd2stby timing
 		DELAY_US(TPD2STBY);
 	}
+	set_address_pipe(RX_ADDR_P0, m_pipe0_addr);
 	m_mode = STANDBY_I_MODE;
-	set_address_pipe(RX_ADDR_P0, pipe);
 	return SUCCESS;
 }
 
@@ -401,7 +403,8 @@ result_t	nrf24l01_init(void)
 	m_mode = POWER_DOWN_MODE;
 
 	// set device to standby-I mode
-	set_standby1(0);
+	set_standby1();
+	m_pipe0_addr = NRF24L01_PIPE0_ADDR;
 
 	return SUCCESS;
 }
@@ -419,7 +422,7 @@ result_t nrf24l01_set_channel(byte_t ch)
 		return ERROR;
 
 	if (ch != CH(inr(RF_CH))) {
-		set_standby1(0);
+		set_standby1();
 		outr(STATUS, ST_RX_DR | ST_TX_DS | ST_MAX_RT);
 		command(FLUSH_TX);
 		command(FLUSH_RX);
@@ -438,18 +441,21 @@ result_t nrf24l01_get_channel(void)
 	return CH(inr(RF_CH));
 }
 
-result_t nrf24l01_open_pipe(byte_t pipe)
+result_t nrf24l01_open_pipe(byte_t pipe, byte_t pipe_addr)
 {
 	pipe_reg_t rpipe;
 
-	if (unlikely(m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX)) {
+	if (unlikely(m_mode == UNKNOWN_MODE || pipe > NRF24L01_PIPE_MAX || pipe_addr > NRF24L01_PIPE_ADDR_MAX)) {
 		return ERROR;
 	}
 
 	memcpy_P(&rpipe, &pipe_reg[pipe], sizeof(pipe_reg_t));
 
 	if (!(inr(EN_RXADDR) & rpipe.en_rxaddr)) {
-		set_address_pipe(rpipe.rx_addr, pipe);
+		if (rpipe.rx_addr == RXADDR_P0) {
+			m_pipe0_addr = pipe_addr;
+		}
+		set_address_pipe(rpipe.rx_addr, pipe_addr);
 		outr(EN_RXADDR, inr(EN_RXADDR) | rpipe.en_rxaddr);
 		outr(EN_AA, inr(EN_AA) | rpipe.enaa);
 	}
@@ -470,6 +476,9 @@ result_t nrf24l01_close_pipe(byte_t pipe)
 		outr(EN_RXADDR, inr(EN_RXADDR) & ~rpipe.en_rxaddr);
 		outr(EN_AA, inr(EN_AA) & ~rpipe.enaa);
 		outr(SETUP_RETR, RETR_ARC(ARC_DISABLE));
+		if (rpipe.rx_addr == RXADDR_P0) {
+			m_pipe0_addr = NRF24L01_PIPE0_ADDR;
+		}
 	}
 	return SUCCESS;
 }
@@ -480,7 +489,7 @@ result_t nrf24l01_set_standby(void)
 		return ERROR;
 	}
 
-	set_standby1(0);
+	set_standby1();
 	return command(NOP);
 }
 
@@ -490,7 +499,7 @@ result_t nrf24l01_set_prx(void)
 		return ERROR;
 	}
 
-	set_standby1(0);
+	set_standby1();
 	outr(CONFIG, inr(CONFIG) | CFG_PRIM_RX);
 	m_mode = RX_MODE;
 	enable();
@@ -535,18 +544,20 @@ result_t nrf24l01_prx_data(pdata_t pdata, len_t len)
 	return (result_t)rxlen;
 }
 
-result_t nrf24l01_set_ptx(byte_t pipe)
+result_t nrf24l01_set_ptx(byte_t pipe_addr)
 {
 	if (unlikely(m_mode == UNKNOWN_MODE)) {
 		return ERROR;
 	}
 
-	set_standby1(pipe);
+	set_standby1();
 #if (NRF24L01_ARC != ARC_DISABLE)
 	// set ARC and ARD by pipe index to different retry periods to reduce data collisions
-	outr(SETUP_RETR, RETR_ARD(((pipe *2) + 5)) | RETR_ARC(NRF24L01_ARC));
+	// compute ARD range: 1000us <= ARD[pipe] <= 3000us
+	outr(SETUP_RETR, RETR_ARD(((pipe_addr *2) + 1)) | RETR_ARC(NRF24L01_ARC));
 #endif
-	set_address_pipe(TX_ADDR, pipe);
+	set_address_pipe(TX_ADDR, pipe_addr);
+	set_address_pipe(RX_ADDR_P0, pipe_addr);
 	outr(CONFIG, inr(CONFIG) & ~CFG_PRIM_RX);
 	outr(STATUS, ST_TX_DS | ST_MAX_RT);
 	m_mode = TX_MODE;
@@ -567,12 +578,12 @@ result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack)
 	return command_data(!ack ? W_TX_PAYLOAD_NOACK : W_TX_PAYLOAD, raw, len);
 }
 
-result_t nrf24l01_ptx_wait_datasent(bool bmax_rt)
+result_t nrf24l01_ptx_wait_datasent(void)
 {
 	if (m_mode == TX_MODE) {
 		byte_t value;
 		while (!((value=inr(STATUS)) & ST_TX_DS)) {
-			if (value & ST_MAX_RT && bmax_rt) {
+			if (value & ST_MAX_RT) {
 				outr(STATUS, ST_MAX_RT);
 				command(FLUSH_TX);
 				return ERROR;
