@@ -83,7 +83,7 @@
 #define CH(c)							(c & RF_CH_MASK)
 #define CH_MIN						10
 #define CH_MAX_2MBPS	54		//63
-#define CH_MAX_1MBPS	116		//126
+#define CH_MAX_1MBPS	10	//116		//126
 
 /* RF setup (reset value: 0b00001110) */
 #define RF_SETUP				0x06

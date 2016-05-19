@@ -41,9 +41,10 @@
 #define JOIN_RETRY_MIN	5
 #define SEND_RETRY			3
 
-#define INVALID_EVENTFD		(UINT_FAST64_MAX-1)
-
 #define BROADCAST		NRF24L01_PIPE0_ADDR
+
+#define SET_ERROR(e)		(-(e*65536))
+#define GET_ERROR(v)		((-v)/65536)
 
 enum {
 	eUNKNOWN,
@@ -435,11 +436,10 @@ static int join_read(ulong_t start)
 		len = nrf24l01_prx_data(&data, sizeof(data));
 		TRACE("pipe:%d len:%d data.msg.join.hashid:%#x == hashid=%#x\n", pipe, len, data.msg.join.hashid, ((nrf24_join_local*)m_join_data->raw)->hashid);
 		DUMP_DATA(" ", pipe, &data, len);
-		if (len == (sizeof(data.hdr)+sizeof(nrf24_join_local)) && pipe == BROADCAST &&
-			data.hdr.net_addr == m_join_data->net_addr &&
+		if (len == (sizeof(data.hdr)+sizeof(nrf24_join_local)) &&
+			pipe == BROADCAST &&
 			data.hdr.msg_type == NRF24_MSG_JOIN_RESULT &&
-			data.msg.join.hashid == ((nrf24_join_local*)m_join_data->raw)->hashid &&
-			data.msg.join.result == NRF24_ECONNREFUSED) {
+			(data.msg.join.result == NRF24_ECONNREFUSED || data.msg.join.result == NRF24_SUCCESS)) {
 			return eJOIN_ECONNREFUSED;
 		}
 	}
@@ -573,8 +573,7 @@ static gboolean server_service(gpointer dummy)
 			break;
 
 		case eJOIN_CHANNEL_BUSY:
-			eventfd_write(m_fd, INVALID_EVENTFD);
-			errno = EUSERS;
+			eventfd_write(m_fd, SET_ERROR(EUSERS));
 			m_state = eCLOSE_PENDING;
 			break;
 
@@ -654,7 +653,7 @@ int nrf24l01_server_close(int socket)
 
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
-		eventfd_write(socket, INVALID_EVENTFD);
+		eventfd_write(socket, SET_ERROR(EBADF));
 		if (m_gthread != NULL) {
 			g_thread_join(m_gthread);
 			g_main_loop_unref (m_loop);
@@ -689,6 +688,7 @@ int nrf24l01_server_accept(int socket)
 			}
 		}
 		if (m_naccept < 0) {
+			errno = GET_ERROR(m_naccept);
 			st = ERROR;
 			break;
 		}
@@ -713,8 +713,7 @@ int nrf24l01_server_cancel(int socket)
 		return ERROR;
 	}
 
-	eventfd_write(socket, INVALID_EVENTFD);
-	errno = ECANCELED;
+	eventfd_write(socket, SET_ERROR(ECANCELED));
 	return SUCCESS;
 }
 
