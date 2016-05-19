@@ -33,10 +33,8 @@
 #define POLLTIME_MS											10
 #define SERVICE_THREAD_TIMEOUT_MS	1
 #define JOIN_TIMEOUT_MS								NRF24_TIMEOUT_MS
-#define JOIN_DELAY_MS									(SERVICE_THREAD_TIMEOUT_MS * 2)
-#define JOIN_INTERVAL										(JOIN_TIMEOUT_MS / 4)								//JOIN_DELAY_MS <= timeout <= (JOIN_INTERVAL * JOIN_DELAY_MS)
 #define SEND_DELAY_MS									SERVICE_THREAD_TIMEOUT_MS
-#define SEND_INTERVAL									60																		//SEND_DELAY_MS <= timeout <= (SEND_INTERVAL * SEND_DELAY_MS)
+#define SEND_INTERVAL									60	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
 
 // defines constant retry values
 #define JOIN_RETRY			NRF24_RETRIES
@@ -382,7 +380,7 @@ static int prx_service(void)
 			G_UNLOCK(m_ptx_list);
 			if (send_payload(pdata) != SUCCESS) {
 				if (--pdata->retry == 0) {
-					//TODO: next step, error issue to the application if sent message failure
+					//TODO: next step, error issue to the application if sent message fail
 					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
 					g_free(pdata);
 				} else {
@@ -453,8 +451,8 @@ static int join(bool reset)
 {
 	static int	state = eJOIN,
 					 	retry = JOIN_RETRY,
-					 	ch = 0,
-					 	ch0 = 0;
+					 	ch = CH_MIN,
+					 	ch0 = CH_MIN;
 	static ulong_t	start = 0,
 								delay = 0;
 	int ret = eJOIN;
@@ -518,7 +516,7 @@ static int join(bool reset)
 		TRACE("JOIN timout retry %d...\n", retry);
 		nrf24l01_set_standby();
 		state = eJOIN_GAP;
-		delay = get_random_value(JOIN_INTERVAL, JOIN_DELAY_MS);
+		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS);
 		start = tline_ms();
 		break;
 
