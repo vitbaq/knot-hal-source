@@ -35,12 +35,12 @@ typedef struct {
 } pipe_reg_t;
 
 static const pipe_reg_t pipe_reg[] PROGMEM = {
-	{ AA_P0, RXADDR_P0, RX_ADDR_P0, RX_PW_P0 },
-	{ AA_P1, RXADDR_P1, RX_ADDR_P1, RX_PW_P1 },
-	{ AA_P2, RXADDR_P2, RX_ADDR_P2, RX_PW_P2 },
-	{ AA_P3, RXADDR_P3, RX_ADDR_P3, RX_PW_P3 },
-	{ AA_P4, RXADDR_P4, RX_ADDR_P4, RX_PW_P4 },
-	{ AA_P5, RXADDR_P5, RX_ADDR_P5, RX_PW_P5 }
+	{ AA_P0, EN_RXADDR_P0, RX_ADDR_P0, RX_PW_P0 },
+	{ AA_P1, EN_RXADDR_P1, RX_ADDR_P1, RX_PW_P1 },
+	{ AA_P2, EN_RXADDR_P2, RX_ADDR_P2, RX_PW_P2 },
+	{ AA_P3, EN_RXADDR_P3, RX_ADDR_P3, RX_PW_P3 },
+	{ AA_P4, EN_RXADDR_P4, RX_ADDR_P4, RX_PW_P4 },
+	{ AA_P5, EN_RXADDR_P5, RX_ADDR_P5, RX_PW_P5 }
 };
 
 typedef enum {
@@ -262,7 +262,7 @@ static void set_address_pipe(byte_t reg, byte_t pipe_addr)
 	uint64_t	addr = (pipe_addr == NRF24L01_PIPE0_ADDR) ? PIPE0_ADDR_BASE : PIPE1_ADDR_BASE;
 
 	addr += (pipe_addr << 4) + pipe_addr;
-	outr_data(reg, &addr, (reg == TX_ADDR || reg == RXADDR_P0 || reg == RXADDR_P1) ? AW_RD(inr(SETUP_AW)) : DATA_SIZE);
+	outr_data(reg, &addr, (reg == TX_ADDR || reg == RX_ADDR_P0 || reg == RX_ADDR_P1) ? AW_RD(inr(SETUP_AW)) : DATA_SIZE);
 }
 
 static result_t set_standby1()
@@ -272,14 +272,6 @@ static result_t set_standby1()
 	}
 
 	disable();
-	// set CFG_PRIM_RX=0 (PTX) that should use only 22uA of power
-	byte_t config = inr(CONFIG) & ~CFG_PRIM_RX;
-	outr(CONFIG, config | CFG_PWR_UP);
-	if (m_mode == POWER_DOWN_MODE) {
-		// delay time to Tpd2stby timing
-		DELAY_US(TPD2STBY);
-	}
-	set_address_pipe(RX_ADDR_P0, m_pipe0_addr);
 	m_mode = STANDBY_I_MODE;
 	return SUCCESS;
 }
@@ -360,10 +352,7 @@ result_t	nrf24l01_init(void)
 	outr(CONFIG, inr(CONFIG) & ~CFG_PWR_UP);
 	// Delay to establish to operational timing of the nRF24L01
 	DELAY_US(TPD2STBY);
-
-	// set PTX mode and CRC 16-bit
-	value = inr(CONFIG) & ~CONFIG_MASK;
-	outr(CONFIG, value | CFG_EN_CRC | CFG_CRCO);
+	m_mode = POWER_DOWN_MODE;
 
 	// reset channel and TX observe registers
 	outr(RF_CH, inr(RF_CH) & ~RF_CH_MASK);
@@ -377,6 +366,14 @@ result_t	nrf24l01_init(void)
 	// set address widths
 	value = inr(SETUP_AW) & ~SETUP_AW_MASK;
 	outr(SETUP_AW, value | AW(NRF24L01_ADDR_WIDTHS));
+
+	// set device to standby-I mode
+	value = inr(CONFIG) & ~CONFIG_MASK;
+	value |= CFG_MASK_RX_DR | CFG_MASK_TX_DS | CFG_MASK_MAX_RT | CFG_EN_CRC | CFG_CRCO | CFG_PWR_UP;
+	outr(CONFIG, value);
+	// delay time to Tpd2stby timing
+	DELAY_US(TPD2STBY);
+	m_mode = STANDBY_I_MODE;
 
 	// disable Auto Retransmit Count
 	outr(SETUP_RETR, RETR_ARC(ARC_DISABLE));
@@ -392,18 +389,14 @@ result_t	nrf24l01_init(void)
 	value = inr(DYNPD) & ~DYNPD_MASK;
 	outr(DYNPD, value | (DPL_P5 | DPL_P4 | DPL_P3 | DPL_P2 | DPL_P1 | DPL_P0));
 
-	// reset all the FIFOs
-	command(FLUSH_TX);
-	command(FLUSH_RX);
-
 	// reset pending status
 	value = inr(STATUS) & ~STATUS_MASK;
 	outr(STATUS, value | ST_RX_DR | ST_TX_DS | ST_MAX_RT);
 
-	m_mode = POWER_DOWN_MODE;
+	// reset all the FIFOs
+	command(FLUSH_TX);
+	command(FLUSH_RX);
 
-	// set device to standby-I mode
-	set_standby1();
 	m_pipe0_addr = NRF24L01_PIPE0_ADDR;
 
 	return SUCCESS;
@@ -452,7 +445,7 @@ result_t nrf24l01_open_pipe(byte_t pipe, byte_t pipe_addr)
 	memcpy_P(&rpipe, &pipe_reg[pipe], sizeof(pipe_reg_t));
 
 	if (!(inr(EN_RXADDR) & rpipe.en_rxaddr)) {
-		if (rpipe.rx_addr == RXADDR_P0) {
+		if (rpipe.rx_addr == RX_ADDR_P0) {
 			m_pipe0_addr = pipe_addr;
 		}
 		set_address_pipe(rpipe.rx_addr, pipe_addr);
@@ -476,7 +469,7 @@ result_t nrf24l01_close_pipe(byte_t pipe)
 		outr(EN_RXADDR, inr(EN_RXADDR) & ~rpipe.en_rxaddr);
 		outr(EN_AA, inr(EN_AA) & ~rpipe.enaa);
 		outr(SETUP_RETR, RETR_ARC(ARC_DISABLE));
-		if (rpipe.rx_addr == RXADDR_P0) {
+		if (rpipe.rx_addr == RX_ADDR_P0) {
 			m_pipe0_addr = NRF24L01_PIPE0_ADDR;
 		}
 	}
@@ -500,6 +493,8 @@ result_t nrf24l01_set_prx(void)
 	}
 
 	set_standby1();
+	set_address_pipe(RX_ADDR_P0, m_pipe0_addr);
+	outr(STATUS, ST_RX_DR);
 	outr(CONFIG, inr(CONFIG) | CFG_PRIM_RX);
 	m_mode = RX_MODE;
 	enable();
@@ -551,17 +546,19 @@ result_t nrf24l01_set_ptx(byte_t pipe_addr)
 	}
 
 	set_standby1();
+	set_address_pipe(RX_ADDR_P0, pipe_addr);
+	set_address_pipe(TX_ADDR, pipe_addr);
 #if (NRF24L01_ARC != ARC_DISABLE)
 	// set ARC and ARD by pipe index to different retry periods to reduce data collisions
 	// compute ARD range: 1000us <= ARD[pipe] <= 3000us
 	outr(SETUP_RETR, RETR_ARD(((pipe_addr *2) + 1)) | RETR_ARC(NRF24L01_ARC));
 #endif
-	set_address_pipe(TX_ADDR, pipe_addr);
-	set_address_pipe(RX_ADDR_P0, pipe_addr);
-	outr(CONFIG, inr(CONFIG) & ~CFG_PRIM_RX);
 	outr(STATUS, ST_TX_DS | ST_MAX_RT);
+	outr(CONFIG, inr(CONFIG) & ~CFG_PRIM_RX);
 	m_mode = TX_MODE;
 	enable();
+	// delay time to Tstdby2a timing
+	DELAY_US(TSTBY2A);
 	return command(NOP);
 }
 
@@ -593,7 +590,6 @@ result_t nrf24l01_ptx_wait_datasent(void)
 
 	return SUCCESS;
 }
-
 result_t nrf24l01_ptx_isempty(void)
 {
 	return (m_mode != TX_MODE || (inr(FIFO_STATUS) & FIFO_TX_EMPTY) != 0);

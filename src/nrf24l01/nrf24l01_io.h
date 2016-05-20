@@ -39,12 +39,12 @@
 #define EN_RXADDR				0x02
 #define EN_RXADDR_RST		0b00000011
 #define EN_RXADDR_MASK	0b00111111
-#define RXADDR_P5					0b00100000
-#define RXADDR_P4					0b00010000
-#define RXADDR_P3					0b00001000
-#define RXADDR_P2					0b00000100
-#define RXADDR_P1					0b00000010
-#define RXADDR_P0					0b00000001
+#define EN_RXADDR_P5			0b00100000
+#define EN_RXADDR_P4			0b00010000
+#define EN_RXADDR_P3			0b00001000
+#define EN_RXADDR_P2			0b00000100
+#define EN_RXADDR_P1			0b00000010
+#define EN_RXADDR_P0			0b00000001
 
 /* Setup of address widths (reset value: 0b00000011) */
 #define SETUP_AW				0x03
