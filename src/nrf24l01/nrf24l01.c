@@ -147,26 +147,26 @@ static volatile unsigned				*gpio;
  * Local operation functions
  */
 
-static int dump_data(void *pdata, int len)
-{
-    int i, off, col, n;
-    unsigned char *pd = pdata;
-    char buff[256];
-
-    for (off = n = 0; off < len; off += 16) {
-        n = sprintf(buff, "\t [%04x]", off);
-        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
-            n += sprintf(buff + n, " %02lX", (ulong)pd[i]);
-        // if (col != 0 && off != 0)
-        for (; col != 0; --col)
-            n += sprintf(buff + n, "   ");
-        n += sprintf(buff + n, " - ");
-        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
-            n += sprintf(buff + n, "%c", pd[i] >= ' ' && pd[i] < 0x7f ? pd[i] : '.');
-        printf("%s\r\n", buff);
-    }
-    return 0;
-}
+//static int dump_data(void *pdata, int len)
+//{
+//    int i, off, col, n;
+//    unsigned char *pd = pdata;
+//    char buff[256];
+//
+//    for (off = n = 0; off < len; off += 16) {
+//        n = sprintf(buff, "\t [%04x]", off);
+//        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
+//            n += sprintf(buff + n, " %02lX", (ulong)pd[i]);
+//        // if (col != 0 && off != 0)
+//        for (; col != 0; --col)
+//            n += sprintf(buff + n, "   ");
+//        n += sprintf(buff + n, " - ");
+//        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
+//            n += sprintf(buff + n, "%c", pd[i] >= ' ' && pd[i] < 0x7f ? pd[i] : '.');
+//        printf("%s\r\n", buff);
+//    }
+//    return 0;
+//}
 
 static inline void enable(void)
 {
@@ -188,11 +188,11 @@ static void io_setup()
 	}
 
 	gpio = (volatile unsigned*)mmap(NULL,
-																BLOCK_SIZE,
-																PROT_READ | PROT_WRITE,
-																MAP_SHARED,
-																mem_fd,
-																GPIO_BASE);
+																  BLOCK_SIZE,
+																  PROT_READ | PROT_WRITE,
+																  MAP_SHARED,
+																  mem_fd,
+																  GPIO_BASE);
    	close(mem_fd);
    	if (gpio == MAP_FAILED) {
       		printf("mmap error\n");
@@ -338,7 +338,7 @@ result_t nrf24l01_deinit(void)
 	return SUCCESS;
 }
 
-result_t	nrf24l01_init(void)
+result_t nrf24l01_init(void)
 {
 	byte_t		value;
 
@@ -348,8 +348,8 @@ result_t	nrf24l01_init(void)
 
 	io_setup();
 
-	// set device in power down mode
-	outr(CONFIG, inr(CONFIG) & ~CFG_PWR_UP);
+	// reset device in power down mode
+	outr(CONFIG, CONFIG_RST);
 	// Delay to establish to operational timing of the nRF24L01
 	DELAY_US(TPD2STBY);
 	m_mode = POWER_DOWN_MODE;
@@ -496,11 +496,11 @@ result_t nrf24l01_set_prx(void)
 	set_address_pipe(RX_ADDR_P0, m_pipe0_addr);
 	outr(STATUS, ST_RX_DR);
 	outr(CONFIG, inr(CONFIG) | CFG_PRIM_RX);
-	m_mode = RX_MODE;
+	// enable and delay time to Tstdby2a timing
 	enable();
-	// delay time to Tstdby2a timing
 	DELAY_US(TSTBY2A);
-	return command(NOP);
+	m_mode = RX_MODE;
+	return SUCCESS;
 }
 
 result_t nrf24l01_prx_pipe_available(void)
@@ -529,13 +529,15 @@ result_t nrf24l01_prx_data(pdata_t pdata, len_t len)
 
 	command_data(R_RX_PL_WID, &rxlen, DATA_SIZE);
     // note: flush RX FIFO if the read value is larger than 32 bytes.
-	if (rxlen > NRF24L01_PAYLOAD_SIZE || rxlen == 0) {
+	if (rxlen > NRF24L01_PAYLOAD_SIZE) {
 		command(FLUSH_RX);
-		return ERROR;
+		return 0;
 	}
 
-	rxlen = _MIN(len, rxlen);
-	command_data(R_RX_PAYLOAD, pdata, rxlen);
+	if (rxlen != 0) {
+		rxlen = _MIN(len, rxlen);
+		command_data(R_RX_PAYLOAD, pdata, rxlen);
+	}
 	return (result_t)rxlen;
 }
 
@@ -555,11 +557,11 @@ result_t nrf24l01_set_ptx(byte_t pipe_addr)
 #endif
 	outr(STATUS, ST_TX_DS | ST_MAX_RT);
 	outr(CONFIG, inr(CONFIG) & ~CFG_PRIM_RX);
-	m_mode = TX_MODE;
+	// enable and delay time to Tstdby2a timing
 	enable();
-	// delay time to Tstdby2a timing
 	DELAY_US(TSTBY2A);
-	return command(NOP);
+	m_mode = TX_MODE;
+	return SUCCESS;
 }
 
 result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack)

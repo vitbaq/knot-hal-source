@@ -15,7 +15,7 @@
 /*
  * DEFAULT values to initialize the nRF24L01
  */
-#define NRF24L01_POWER							PWR_12DBM	// Output power in max power
+#define NRF24L01_POWER							PWR_0DBM	// Output power in max power
 #define NRF24L01_DATA_RATE					DR_1MBPS		// Data rate in Mbps
 #define NRF24L01_CHANNEL_DEFAULT	CH_MIN				// Channel = 2400GHz + CHANNEL_DEF [MHz], max 2.525GHz
 #define NRF24L01_ARC									15						// Auto retransmit count = 15 attempt
@@ -54,18 +54,18 @@ result_t nrf24l01_ce_off(void);
 /*
 * nrf24l01_init - initialize the nRF24L01 device
 */
-result_t	nrf24l01_init(void);
-result_t	nrf24l01_deinit(void);
-result_t	nrf24l01_set_channel(byte_t ch);
-result_t	nrf24l01_get_channel(void);
-result_t	nrf24l01_open_pipe(byte_t pipe, byte_t pipe_addr);
-result_t	nrf24l01_close_pipe(byte_t pipe);
-result_t	nrf24l01_set_standby(void);
-result_t	nrf24l01_set_prx(void);
+result_t nrf24l01_init(void);
+result_t nrf24l01_deinit(void);
+result_t nrf24l01_set_channel(byte_t ch);
+result_t nrf24l01_get_channel(void);
+result_t nrf24l01_open_pipe(byte_t pipe, byte_t pipe_addr);
+result_t nrf24l01_close_pipe(byte_t pipe);
+result_t nrf24l01_set_standby(void);
+result_t nrf24l01_set_prx(void);
 result_t nrf24l01_prx_pipe_available(void);
-result_t	nrf24l01_prx_data(pdata_t pdata, len_t len);
-result_t	nrf24l01_set_ptx(byte_t pipe_addr);
-result_t	nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack);
+result_t nrf24l01_prx_data(pdata_t pdata, len_t len);
+result_t nrf24l01_set_ptx(byte_t pipe_addr);
+result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack);
 result_t nrf24l01_ptx_wait_datasent(void);
 result_t nrf24l01_ptx_isempty(void);
 result_t nrf24l01_ptx_isfull(void);

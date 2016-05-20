@@ -435,7 +435,7 @@ static int join_read(ulong_t start)
 	for (pipe=nrf24l01_prx_pipe_available(); pipe!=NRF24L01_NO_PIPE; pipe=nrf24l01_prx_pipe_available()) {
 		len = nrf24l01_prx_data(&data, sizeof(data));
 		TRACE("pipe:%d len:%d data.msg.join.hashid:%#x == hashid=%#x\n", pipe, len, data.msg.join.hashid, ((nrf24_join_local*)m_join_data->raw)->hashid);
-		DUMP_DATA(" ", pipe, &data, len);
+		DUMP_DATA(" ", pipe, &data, len >= sizeof(data.hdr) ? len : 0);
 		if (len == (sizeof(data.hdr)+sizeof(nrf24_join_local)) &&
 			pipe == BROADCAST &&
 			data.hdr.msg_type == NRF24_MSG_JOIN_RESULT &&
