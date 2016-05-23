@@ -63,7 +63,7 @@ typedef struct __attribute__ ((packed)) {
 	uint8_t				maj_version;
 	uint8_t				min_version;
 	uint32_t				hashid;
-	uint8_t				pipe;
+	uint8_t				data;
 	int8_t					result;
 } nrf24_join_local;
 

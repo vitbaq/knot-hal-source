@@ -315,7 +315,7 @@ static int prx_service(void)
 					pc = (client_t*)pentry->data;
 				}
 				pc->heartbeat_sec = tline_sec();
-				data.msg.join.pipe = pc->pipe;
+				data.msg.join.data = pc->pipe;
 				data.msg.join.result = NRF24_SUCCESS;
 				put_ptx_queue(build_datasend(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
 				break;
@@ -337,7 +337,7 @@ static int prx_service(void)
 				}
 				data.hdr.msg_type = NRF24_MSG_JOIN_RESULT;
 				data.msg.join.result = NRF24_ECONNREFUSED;
-				if(	pc->net_addr == data.hdr.net_addr && pc ->pipe == data.msg.join.pipe) {
+				if(	pc->net_addr == data.hdr.net_addr && pc->hashid == data.msg.join.hashid) {
 					pc->heartbeat_sec = tline_sec();
 					data.msg.join.result = NRF24_SUCCESS;
 				}
@@ -415,8 +415,8 @@ static data_t *build_join_msg(void)
 	srand(time(NULL) ^ rand() ^ join.hashid);
 	join.maj_version = NRF24_VERSION_MAJOR;
 	join.min_version = NRF24_VERSION_MINOR;
-	join.hashid = rand() ^ (rand() * 65536);
-	join.pipe = BROADCAST;
+	join.hashid = (rand() ^ (rand() * 65536)  ^ join.hashid);
+	join.data = BROADCAST;
 	join.result = NRF24_SUCCESS;
 	return build_datasend(BROADCAST,
 									 ((join.hashid / 65536) ^ join.hashid),
