@@ -98,7 +98,6 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	session_t *ps;
 
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR)) {
-		fprintf(stderr, "accept_cb cond=%#04x G_IO_NVAL=%#04x G_IO_HUP=%#04x G_IO_ERR=%#04x\n", cond, G_IO_NVAL, G_IO_HUP, G_IO_ERR);
 		return FALSE;
 	}
 
