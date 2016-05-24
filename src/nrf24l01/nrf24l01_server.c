@@ -419,11 +419,11 @@ static data_t *build_join_msg(void)
 	join.data = BROADCAST;
 	join.result = NRF24_SUCCESS;
 	return build_datasend(BROADCAST,
-									 ((join.hashid / 65536) ^ join.hashid),
-									 NRF24_MSG_JOIN_GATEWAY,
-									 &join,
-									 sizeof(join),
-									 NULL);
+											  ((join.hashid / 65536) ^ join.hashid),
+											  NRF24_MSG_JOIN_GATEWAY,
+											  &join,
+											  sizeof(join),
+											  NULL);
 }
 
 static int join_read(ulong_t start)
@@ -450,7 +450,6 @@ static int join_read(ulong_t start)
 static int join(bool reset)
 {
 	static int	state = eJOIN,
-					 	retry = JOIN_RETRY,
 					 	ch = CH_MIN,
 					 	ch0 = CH_MIN;
 	static ulong_t	start = 0,
@@ -460,9 +459,9 @@ static int join(bool reset)
 	if (reset) {
 		ch = nrf24l01_get_channel();
 		ch0 = ch;
-		retry = get_random_value(JOIN_RETRY, 1);
-		if (retry < JOIN_RETRY_MIN) {
-			retry += JOIN_RETRY_MIN;
+		m_join_data->retry = get_random_value(JOIN_RETRY, 1);
+		if (m_join_data->retry < JOIN_RETRY_MIN) {
+			m_join_data->retry += JOIN_RETRY_MIN;
 		}
 		state = eJOIN;
 	}
@@ -478,7 +477,7 @@ static int join(bool reset)
 			nrf24l01_set_prx();
 			start = tline_ms();
 			state = eJOIN_PENDING;
-			TRACE("JOIN starting retry #%d\n", retry);
+			TRACE("JOIN starting retry #%d\n", m_join_data->retry);
 		}
 		break;
 
@@ -499,21 +498,21 @@ static int join(bool reset)
 		}
 
 		TRACE("JOIN attempt in new channel #%d\n", nrf24l01_get_channel());
-		retry = get_random_value(JOIN_RETRY, 1);
-		if (retry < JOIN_RETRY_MIN) {
-			retry += JOIN_RETRY_MIN;
+		m_join_data->retry = get_random_value(JOIN_RETRY, 1);
+		if (m_join_data->retry < JOIN_RETRY_MIN) {
+			m_join_data->retry += JOIN_RETRY_MIN;
 		}
 		state = eJOIN;
 		break;
 
 	case eJOIN_TIMEOUT:
-		if (--retry == 0) {
+		if (--m_join_data->retry == 0) {
 			printf("JOIN finished in channel #%d\n", nrf24l01_get_channel());
 			ret = ePRX;
 			break;
 		}
 
-		TRACE("JOIN timout retry %d...\n", retry);
+		TRACE("JOIN timout retry %d...\n", m_join_data->retry);
 		nrf24l01_set_standby();
 		state = eJOIN_GAP;
 		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS);
@@ -662,8 +661,6 @@ int nrf24l01_server_close(int socket)
 		g_free(m_join_data);
 		m_join_data = NULL;
 		clear_lists();
-	} else {
-		close(socket);
 	}
 	errno = SUCCESS;
 	return SUCCESS;

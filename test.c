@@ -186,16 +186,12 @@ static int start_server(void)
 
 static void stop_server(void)
 {
-	fprintf(stdout, "stop_server IN...\n");
-
 	if (m_server_watch_id != 0) {
 		g_source_remove(m_server_watch_id);
 	}
 
 	nrf24l01_driver.remove();
-	fprintf(stdout, "stop_server OUT\n");
 }
-
 static void sig_term(int sig)
 {
 	g_main_loop_quit(main_loop);

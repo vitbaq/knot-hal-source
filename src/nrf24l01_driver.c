@@ -63,10 +63,10 @@ static int nrf24_close(int socket)
 	if (state == eSERVER) {
 		return nrf24l01_server_close(socket);
 	} else if (state == eCLIENT) {
-			//return nrf24l01_client_close(socket);
+		//return nrf24l01_client_close(socket);
 	}
+	close(socket);
 	if (socket == m_fd) {
-		close(m_fd);
 		m_fd = SOCKET_INVALID;
 		m_state =  eUNKNOWN;
 	}
