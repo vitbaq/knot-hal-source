@@ -21,7 +21,7 @@
 #include "util.h"
 #include "list.h"
 
-#define TRACE_ALL
+//#define TRACE_ALL
 #include "debug.h"
 #ifdef TRACE_ALL
 #define DUMP_DATA		dump_data
@@ -157,7 +157,6 @@ static inline int get_random_value(int interval, int ntime)
 		delay *= -1;
 		delay = ((delay % interval) + 1) * ntime;
 	}
-	TRACE(">>> DELAY %d\n", delay);
 	return (delay);
 }
 
@@ -457,8 +456,7 @@ static int join(bool reset)
 {
 	static int	state = eJOIN,
 					 	ch = CH_MIN,
-					 	ch0 = CH_MIN,
-					 	nretry;
+					 	ch0 = CH_MIN;
 	static ulong_t	start = 0,
 								delay = 0;
 	int ret = eJOIN;
@@ -466,7 +464,7 @@ static int join(bool reset)
 	if (reset) {
 		ch = nrf24l01_get_channel();
 		ch0 = ch;
-		nretry = m_join_data->retry = JOIN_RETRY + get_random_value(JOIN_RETRY, 1);
+		m_join_data->retry = JOIN_RETRY + get_random_value(JOIN_RETRY, 1);
 		state = eJOIN;
 	}
 
@@ -478,7 +476,7 @@ static int join(bool reset)
 		nrf24l01_set_prx();
 		start = tline_ms();
 		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS);
-		TRACE("JOIN retry=%d/%d delay=%ld ch=%d\n", m_join_data->retry, nretry, delay, ch);
+		TRACE("Server joins ch#%d retry=%d delay=%ld\n", ch, m_join_data->retry, delay);
 		state = eJOIN_PENDING;
 		break;
 
@@ -488,7 +486,7 @@ static int join(bool reset)
 
 	case eJOIN_TIMEOUT:
 		if (--m_join_data->retry == 0) {
-			printf("JOIN finished in channel #%d\n", nrf24l01_get_channel());
+			printf("Server join on channel #%d\n", nrf24l01_get_channel());
 			ret = ePRX;
 			break;
 		}
@@ -508,8 +506,7 @@ static int join(bool reset)
 			break;
 		}
 
-		TRACE("JOIN attempt in new channel #%d\n", nrf24l01_get_channel());
-		nretry = m_join_data->retry = JOIN_RETRY + get_random_value(JOIN_RETRY, 1);
+		m_join_data->retry = JOIN_RETRY + get_random_value(JOIN_RETRY, 1);
 		state = eJOIN;
 		break;
 	}
@@ -614,6 +611,8 @@ int nrf24l01_server_open(int socket, int channel)
 		return ERROR;
 	}
 	DUMP_DATA("Join Data:", -1, m_join_data, m_join_data->len + sizeof(data_t));
+
+	printf("Server try to join on channel #%d\n", nrf24l01_get_channel());
 
 	g_mutex_init(&G_LOCK_NAME(m_prx_list));
 	g_mutex_init(&G_LOCK_NAME(m_ptx_list));

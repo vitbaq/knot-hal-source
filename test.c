@@ -188,36 +188,32 @@ static void stop_server(void)
 {
 	nrf24l01_driver.remove();
 }
+
 static void sig_term(int sig)
 {
 	g_main_loop_quit(main_loop);
+	putchar('\n');
 }
 
 int main(int argc, char *argv[])
 {
-	GOptionContext *context;
-	GError *gerr = NULL;
-	int err;
+	int result;
 
-	fprintf(stdout, "NRF24 Server Test\n");
+	fprintf(stdout, "NRF24 Server starting...\n");
 
-	err = start_server();
-	if (err != 0) {
-		return err;
+	result = start_server();
+	if (result == 0) {
+		signal(SIGTERM, sig_term);
+		signal(SIGINT, sig_term);
+
+		main_loop = g_main_loop_new(NULL, FALSE);
+		g_main_loop_run(main_loop);
+		g_main_loop_unref(main_loop);
+
+		stop_server();
+
+		fprintf(stdout, "NRF24 Server finished.\n");
 	}
 
-	signal(SIGTERM, sig_term);
-	signal(SIGINT, sig_term);
-
-	fprintf(stdout, "started OK\n");
-
-	main_loop = g_main_loop_new(NULL, FALSE);
-	g_main_loop_run(main_loop);
-	g_main_loop_unref(main_loop);
-
-	stop_server();
-
-	fprintf(stdout, "finishing OK\n");
-
-	return 0;
+	return result;
 }
