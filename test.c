@@ -42,8 +42,6 @@ typedef struct {
 	volatile int				ref;
 } session_t;
 
-static unsigned int m_server_watch_id;
-static GIOChannel *m_server_io;
 static GMainLoop *main_loop;
 
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
@@ -97,6 +95,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	int sockfd, srv_sock;
 	session_t *ps;
 
+	fprintf(stderr, "accept(): %d\n", cond);
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR)) {
 		return FALSE;
 	}
@@ -146,7 +145,8 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 static int start_server(void)
 {
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
-	int err, sock, i;
+	GIOChannel *sock_io;
+	int sock;
 
 	nrf24l01_driver.probe();
 
@@ -164,8 +164,8 @@ static int start_server(void)
 		return 2;
 	}
 
-	m_server_io = g_io_channel_unix_new(sock);
-	if(m_server_io == NULL)
+	sock_io = g_io_channel_unix_new(sock);
+	if(sock_io == NULL)
 	{
 		nrf24l01_driver.close(sock);
 		nrf24l01_driver.remove();
@@ -173,23 +173,19 @@ static int start_server(void)
 		return 3;
 	}
 
-	g_io_channel_set_close_on_unref(m_server_io, TRUE);
-	g_io_channel_set_flags(m_server_io, G_IO_FLAG_NONBLOCK, NULL);
+	g_io_channel_set_close_on_unref(sock_io, TRUE);
+	g_io_channel_set_flags(sock_io, G_IO_FLAG_NONBLOCK, NULL);
 
 	/* Use node_ops as parameter to allow multi drivers */
-	m_server_watch_id = g_io_add_watch(m_server_io, cond, accept_cb, NULL);
+	g_io_add_watch(sock_io, cond, accept_cb, NULL);
 	/* Keep only one ref: server watch  */
-	g_io_channel_unref(m_server_io);
+	g_io_channel_unref(sock_io);
 
 	return 0;
 }
 
 static void stop_server(void)
 {
-	if (m_server_watch_id != 0) {
-		g_source_remove(m_server_watch_id);
-	}
-
 	nrf24l01_driver.remove();
 }
 static void sig_term(int sig)

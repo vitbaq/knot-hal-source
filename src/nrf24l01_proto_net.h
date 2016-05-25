@@ -20,8 +20,10 @@
 #define NRF24_VERSION_MINOR		00
 
 // Network retransmiting parameters
-#define NRF24_TIMEOUT_MS		2000		//miliseconds
-#define NRF24_RETRIES					15
+#define NRF24_TIMEOUT_MS							50	//milisecond
+#define NRF24_HEARTBEAT_S							5		//second
+#define NRF24_HEARTBEAT_TIMEOUT_S		(NRF24_HEARTBEAT_S + (NRF24_TIMEOUT_MS / 1000))
+#define NRF24_RETRIES										200
 
 // Network messages
 #define NRF24_MSG_INVALID					0x00

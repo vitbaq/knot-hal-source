@@ -31,15 +31,12 @@
 
 // defines constant time values
 #define POLLTIME_MS											10
-#define SERVICE_THREAD_TIMEOUT_MS	1
-#define JOIN_TIMEOUT_MS								NRF24_TIMEOUT_MS
-#define SEND_DELAY_MS									SERVICE_THREAD_TIMEOUT_MS
-#define SEND_INTERVAL									60	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
+#define SEND_INTERVAL									NRF24_TIMEOUT_MS	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
+#define SEND_DELAY_MS									1
 
 // defines constant retry values
 #define JOIN_RETRY			NRF24_RETRIES
-#define JOIN_RETRY_MIN	5
-#define SEND_RETRY			3
+#define SEND_RETRY			20
 
 #define BROADCAST		NRF24L01_PIPE0_ADDR
 
@@ -56,7 +53,6 @@ enum {
 	eJOIN,
 	eJOIN_PENDING,
 	eJOIN_TIMEOUT,
-	eJOIN_GAP,
 	eJOIN_ECONNREFUSED,
 	eJOIN_CHANNEL_BUSY,
 
@@ -111,7 +107,24 @@ static G_LOCK_DEFINE(m_ptx_list);
 static LIST_HEAD(m_prx_list);
 static G_LOCK_DEFINE(m_prx_list);
 
-static void clear_lists(void)
+static void client_free(gpointer pentry)
+{
+	close(((client_t*)pentry)->fds.srv);
+	g_free(pentry);
+}
+
+static inline gint state_match(gconstpointer pentry, gconstpointer pdata)
+{
+	return ((const client_t*)pentry)->state - *((const int*)pdata);
+}
+
+static inline gint join_match(gconstpointer pentry, gconstpointer pdata)
+{
+	return !(((const client_t*)pentry)->net_addr == ((const nrf24_payload*)pdata)->hdr.net_addr &&
+				  ((const client_t*)pentry)->hashid == ((const nrf24_payload*)pdata)->msg.join.hashid);
+}
+
+static void release_server(void)
 {
 	data_t *pdata,
 				*pnext;
@@ -134,34 +147,12 @@ static void clear_lists(void)
 	INIT_LIST_HEAD(&m_prx_list);
 }
 
-static void client_free(gpointer pentry)
-{
-	close(((client_t*)pentry)->fds.srv);
-	g_free(pentry);
-}
-
-void client_close(gpointer pentry, gpointer user_data)
-{
-	close(((client_t*)pentry)->fds.srv);
-	((client_t*)pentry)->fds.srv = SOCKET_INVALID;
-}
-
-static inline gint state_match(gconstpointer pentry, gconstpointer pdata)
-{
-	return ((const client_t*)pentry)->state - *((const int*)pdata);
-}
-
-static inline gint join_match(gconstpointer pentry, gconstpointer pdata)
-{
-	return !(((const client_t*)pentry)->net_addr == ((const nrf24_payload*)pdata)->hdr.net_addr &&
-				  ((const client_t*)pentry)->hashid == ((const nrf24_payload*)pdata)->msg.join.hashid);
-}
-
 static inline int get_random_value(int interval, int ntime)
 {
 	int delay;
-	srand(time(NULL) ^ rand() ^ delay);
-	delay = ((rand() % interval) + 1) * ntime;
+
+	srand(time(NULL) ^ rand() ^ getpid());
+	delay = (((rand()  ^ getpid()) % interval) + 1) * ntime;
 	if (delay < 0) {
 		delay *= -1;
 		delay = ((delay % interval) + 1) * ntime;
@@ -189,18 +180,6 @@ static int get_freepipe(void)
 		;
 
 	return (pipe != 0 ? (NRF24L01_PIPE_ADDR_MAX - pipe) + 1 : NRF24L01_NO_PIPE);
-}
-
-static int set_client(int pipe, client_t *pc)
-{
-	if(pipe > BROADCAST) {
-		--pipe;
-		if(pipe < NRF24L01_PIPE_ADDR_MAX && m_client_pipes[pipe] == NULL) {
-			m_client_pipes[pipe] = pc;
-			return SUCCESS;
-		}
-	}
-	return ERROR;
 }
 
 static client_t *get_client(int pipe)
@@ -264,12 +243,62 @@ static inline void put_ptx_queue(data_t *pd)
 	G_UNLOCK(m_ptx_list);
 }
 
+static bool set_new_client(int newpipe, nrf24_payload *ppl, int len)
+{
+	client_t *pc;
+
+	if (g_slist_find_custom(m_pclients, ppl, join_match) != NULL) {
+		return false;
+	}
+
+	pc = g_new0(client_t, 1);
+	if (pc == NULL || socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, (int*)&pc->fds) < 0) {
+		TERROR("socketpair(): %s\n", strerror(errno));
+		g_free(pc);
+		return false;
+	}
+
+	pc->state = eOPEN;
+	pc->pipe = newpipe;
+	pc->net_addr = ppl->hdr.net_addr;
+	pc->hashid = ppl->msg.join.hashid;
+	pc->heartbeat_sec = tline_sec();
+	m_client_pipes[newpipe] = pc;
+	m_pclients = g_slist_append(m_pclients, pc);
+	eventfd_write(m_fd, 1);
+	return true;
+}
+
+static void check_heartbeat(gpointer pentry, gpointer user_data)
+{
+//	client_t *pc = (client_t*)pentry;
+//	ulong_t	now = tline_ms();
+//
+//	if (tline_out(now, pc->heartbeat_sec, NRF24_HEARTBEAT_TIMEOUT_S)) {
+//
+//	} else 	if (tline_out(now, pc->heartbeat_sec, NRF24_HEARTBEAT_S)) {
+//		nrf24_join_local join;
+//
+//		join.maj_version = NRF24_VERSION_MAJOR;
+//		join.min_version = NRF24_VERSION_MINOR;
+//		join.hashid = pc->hashid;
+//		join.data = pc->pipe;
+//		join.result = NRF24_SUCCESS;
+//		put_ptx_queue(build_datasend(pc->pipe,
+//																   pc->net_addr,
+//																   NRF24_MSG_HEARTBEAT,
+//																   &join,
+//																   sizeof(join),
+//																   NULL));
+//		pc->heartbeat_sec = tline_sec();
+//	}
+}
+
 static int prx_service(void)
 {
 	nrf24_payload	data;
-	int	pipe,
+	int	pipe, freepipe,
 			len;
-	GSList *pentry;
 	client_t *pc;
 
 	for (pipe=nrf24l01_prx_pipe_available(); pipe!=NRF24L01_NO_PIPE; pipe=nrf24l01_prx_pipe_available()) {
@@ -286,37 +315,12 @@ static int prx_service(void)
 					break;
 				}
 				data.hdr.msg_type = NRF24_MSG_JOIN_RESULT;
-				pentry = g_slist_find_custom(m_pclients, &data, join_match);
-				if (pentry == NULL) {
-					int freepipe = get_freepipe();
-					if (freepipe == NRF24L01_NO_PIPE) {
-						data.msg.join.result = NRF24_ECONNREFUSED;
-						put_ptx_queue(build_datasend(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
-						break;
-					}
-					pc = g_new0(client_t, 1);
-					if (pc == NULL || socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, (int*)&pc->fds) < 0) {
-						TERROR("serial: socketpair(): %s\n", strerror(errno));
-						g_free(pc);
-						break;
-					}
-					pc->state = eOPEN;
-					pc->pipe = freepipe;
-					pc->net_addr = data.hdr.net_addr;
-					pc->hashid = data.msg.join.hashid;
-					if(set_client(freepipe, pc) == ERROR) {
-						client_close(pc, NULL);
-						g_free(pc);
-						break;
-					}
-					m_pclients = g_slist_append(m_pclients, pc);
-					eventfd_write(m_fd, 1);
-				} else {
-					pc = (client_t*)pentry->data;
+				data.msg.join.result = NRF24_ECONNREFUSED;
+				freepipe = get_freepipe();
+				if (freepipe != NRF24L01_NO_PIPE && set_new_client(freepipe, &data, len)) {
+					data.msg.join.data = freepipe;
+					data.msg.join.result = NRF24_SUCCESS;
 				}
-				pc->heartbeat_sec = tline_sec();
-				data.msg.join.data = pc->pipe;
-				data.msg.join.result = NRF24_SUCCESS;
 				put_ptx_queue(build_datasend(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
 				break;
 
@@ -356,6 +360,8 @@ static int prx_service(void)
 		}
 	}
 
+	g_slist_foreach(m_pclients, check_heartbeat, NULL);
+
 	if (!list_empty(&m_ptx_list)) {
 		static int send_state = eTX_FIRE;
 		static ulong_t	start = 0,
@@ -381,7 +387,7 @@ static int prx_service(void)
 			G_UNLOCK(m_ptx_list);
 			if (send_payload(pdata) != SUCCESS) {
 				if (--pdata->retry == 0) {
-					//TODO: next step, error issue to the application if sent message fail
+					//TODO: next step, error issue to the application if sent NRF24_MSG_APP message fail
 					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
 					g_free(pdata);
 				} else {
@@ -412,10 +418,10 @@ static data_t *build_join_msg(void)
 {
 	nrf24_join_local join;
 
-	srand(time(NULL) ^ rand() ^ join.hashid);
+	srand(time(NULL) ^ rand() ^ getpid());
 	join.maj_version = NRF24_VERSION_MAJOR;
 	join.min_version = NRF24_VERSION_MINOR;
-	join.hashid = (rand() ^ (rand() * 65536)  ^ join.hashid);
+	join.hashid = (rand() ^ ((rand() ^ getpid()) * 65536));
 	join.data = BROADCAST;
 	join.result = NRF24_SUCCESS;
 	return build_datasend(BROADCAST,
@@ -426,7 +432,7 @@ static data_t *build_join_msg(void)
 											  NULL);
 }
 
-static int join_read(ulong_t start)
+static int join_read(ulong_t start, ulong_t timeout)
 {
 	nrf24_payload	data;
 	int	pipe,
@@ -444,14 +450,15 @@ static int join_read(ulong_t start)
 		}
 	}
 
-	return (tline_out(tline_ms(), start, JOIN_TIMEOUT_MS) ? eJOIN_TIMEOUT : eJOIN_PENDING);
+	return (tline_out(tline_ms(), start, timeout) ? eJOIN_TIMEOUT : eJOIN_PENDING);
 }
 
 static int join(bool reset)
 {
 	static int	state = eJOIN,
 					 	ch = CH_MIN,
-					 	ch0 = CH_MIN;
+					 	ch0 = CH_MIN,
+					 	nretry;
 	static ulong_t	start = 0,
 								delay = 0;
 	int ret = eJOIN;
@@ -459,30 +466,34 @@ static int join(bool reset)
 	if (reset) {
 		ch = nrf24l01_get_channel();
 		ch0 = ch;
-		m_join_data->retry = get_random_value(JOIN_RETRY, 1);
-		if (m_join_data->retry < JOIN_RETRY_MIN) {
-			m_join_data->retry += JOIN_RETRY_MIN;
-		}
+		nretry = m_join_data->retry = JOIN_RETRY + get_random_value(JOIN_RETRY, 1);
 		state = eJOIN;
 	}
 
 	switch(state) {
 	case eJOIN:
-		if (m_join_data == NULL) {
-			ret = eJOIN_CHANNEL_BUSY;
-		} else {
-			send_payload(m_join_data);
-			m_join_data->offset = 0;
-			m_join_data->offset_retry = 0;
-			nrf24l01_set_prx();
-			start = tline_ms();
-			state = eJOIN_PENDING;
-			TRACE("JOIN starting retry #%d\n", m_join_data->retry);
-		}
+		send_payload(m_join_data);
+		m_join_data->offset = 0;
+		m_join_data->offset_retry = 0;
+		nrf24l01_set_prx();
+		start = tline_ms();
+		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS);
+		TRACE("JOIN retry=%d/%d delay=%ld ch=%d\n", m_join_data->retry, nretry, delay, ch);
+		state = eJOIN_PENDING;
 		break;
 
 	case eJOIN_PENDING:
-		state = join_read(start);
+		state = join_read(start, delay);
+		break;
+
+	case eJOIN_TIMEOUT:
+		if (--m_join_data->retry == 0) {
+			printf("JOIN finished in channel #%d\n", nrf24l01_get_channel());
+			ret = ePRX;
+			break;
+		}
+
+		state = eJOIN;
 		break;
 
 	case eJOIN_ECONNREFUSED:
@@ -498,31 +509,8 @@ static int join(bool reset)
 		}
 
 		TRACE("JOIN attempt in new channel #%d\n", nrf24l01_get_channel());
-		m_join_data->retry = get_random_value(JOIN_RETRY, 1);
-		if (m_join_data->retry < JOIN_RETRY_MIN) {
-			m_join_data->retry += JOIN_RETRY_MIN;
-		}
+		nretry = m_join_data->retry = JOIN_RETRY + get_random_value(JOIN_RETRY, 1);
 		state = eJOIN;
-		break;
-
-	case eJOIN_TIMEOUT:
-		if (--m_join_data->retry == 0) {
-			printf("JOIN finished in channel #%d\n", nrf24l01_get_channel());
-			ret = ePRX;
-			break;
-		}
-
-		TRACE("JOIN timout retry %d...\n", m_join_data->retry);
-		nrf24l01_set_standby();
-		state = eJOIN_GAP;
-		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS);
-		start = tline_ms();
-		break;
-
-	case eJOIN_GAP:
-		if (tline_out(tline_ms(), start, delay)) {
-			state = eJOIN;
-		}
 		break;
 	}
 	return ret;
@@ -548,12 +536,12 @@ static gboolean server_service(gpointer dummy)
 			nrf24l01_close_pipe(1);
 			nrf24l01_close_pipe(0);
 			if (m_pclients != NULL) {
-				g_slist_foreach(m_pclients, client_close, NULL);
-				//g_slist_free_full(m_pclients, client_free);
+				g_slist_free_full(m_pclients, client_free);
+				m_pclients = NULL;
 			}
 			memset(m_client_pipes, 0, sizeof(m_client_pipes));
 			m_state = eUNKNOWN;
-			g_main_loop_quit (m_loop);
+			g_main_loop_quit(m_loop);
 			result = G_SOURCE_REMOVE;
 			break;
 
@@ -593,7 +581,7 @@ static gpointer service_thread(gpointer dummy)
     context = g_main_context_new();
     m_loop = g_main_loop_new(context, FALSE);
     g_main_context_unref(context);
-    timer = g_timeout_source_new(SERVICE_THREAD_TIMEOUT_MS);
+    timer = g_timeout_source_new(0);
     g_source_set_callback(timer, server_service, m_loop, NULL);
     g_source_attach(timer, context);
     g_source_unref(timer);
@@ -618,6 +606,8 @@ int nrf24l01_server_open(int socket, int channel)
 		return ERROR;
 	}
 
+	srand(time(NULL) ^ getpid());
+
 	m_join_data = build_join_msg();
 	if (m_join_data == NULL) {
 		errno = ENOMEM;
@@ -625,7 +615,6 @@ int nrf24l01_server_open(int socket, int channel)
 	}
 	DUMP_DATA("Join Data:", -1, m_join_data, m_join_data->len + sizeof(data_t));
 
-	srand(time(NULL));
 	g_mutex_init(&G_LOCK_NAME(m_prx_list));
 	g_mutex_init(&G_LOCK_NAME(m_ptx_list));
 	m_naccept = 0;
@@ -655,12 +644,12 @@ int nrf24l01_server_close(int socket)
 		eventfd_write(socket, SET_ERROR(EBADF));
 		if (m_gthread != NULL) {
 			g_thread_join(m_gthread);
-			g_main_loop_unref (m_loop);
+			g_main_loop_unref(m_loop);
 			m_gthread == NULL;
 		}
 		g_free(m_join_data);
 		m_join_data = NULL;
-		clear_lists();
+		release_server();
 	}
 	errno = SUCCESS;
 	return SUCCESS;
