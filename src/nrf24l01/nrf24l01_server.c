@@ -147,17 +147,22 @@ static void release_server(void)
 	INIT_LIST_HEAD(&m_prx_list);
 }
 
-static inline int get_random_value(int interval, int ntime)
+static inline int get_random_value(int interval, int ntime, int min)
 {
-	int delay;
+	int value;
 
-	srand(time(NULL) ^ rand() ^ getpid());
-	delay = (((rand()  ^ getpid()) % interval) + 1) * ntime;
-	if (delay < 0) {
-		delay *= -1;
-		delay = ((delay % interval) + 1) * ntime;
+	value = (9973 * ~ tline_us()) + ((value) % 701);
+	srand((unsigned int)value);
+
+	value = (rand() % interval) * ntime;
+	if (value < 0) {
+		value *= -1;
+		value = (value % interval) * ntime;
 	}
-	return (delay);
+	if (value < min) {
+		value += min;
+	}
+	return value;
 }
 
 static int poll_fd(int fd, long int timeout)
@@ -303,8 +308,7 @@ static int prx_service(void)
 	for (pipe=nrf24l01_prx_pipe_available(); pipe!=NRF24L01_NO_PIPE; pipe=nrf24l01_prx_pipe_available()) {
 		len = nrf24l01_prx_data(&data, sizeof(data));
 		if (len >= sizeof(data.hdr)) {
-			TRACE("type %d\n", data.hdr.msg_type);
-			DUMP_DATA(" ", pipe, &data, len);
+			DUMP_DATA("RECV: ", pipe, &data, len);
 			len -= sizeof(data.hdr);
 			switch (data.hdr.msg_type) {
 			case NRF24_MSG_JOIN_LOCAL:
@@ -370,7 +374,7 @@ static int prx_service(void)
 		switch (send_state) {
 		case  eTX_FIRE:
 			start = tline_ms();
-			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS);
+			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
 			send_state = eTX_GAP;
 			/* No break; fall through intentionally */
 		case eTX_GAP:
@@ -396,7 +400,6 @@ static int prx_service(void)
 					G_UNLOCK(m_ptx_list);
 				}
 			} else 	if (pdata->len == pdata->offset) {
-				TRACE("Message sent to the pipe#%d len=%d\n", pdata->pipe, pdata->len);
 				g_free(pdata);
 			} else {
 				TRACE("Message fragment sent to the pipe#%d len=%d\n", pdata->pipe, pdata->len);
@@ -417,11 +420,11 @@ static data_t *build_join_msg(void)
 {
 	nrf24_join_local join;
 
-	srand(time(NULL) ^ rand() ^ getpid());
 	join.maj_version = NRF24_VERSION_MAJOR;
 	join.min_version = NRF24_VERSION_MINOR;
-	join.hashid = (rand() ^ ((rand() ^ getpid()) * 65536));
-	join.data = BROADCAST;
+	join.hashid = get_random_value(INT32_MAX, 1, 1);
+	join.hashid ^= (get_random_value(INT32_MAX, 1, 1) * 65536);
+	join.data = 0;
 	join.result = NRF24_SUCCESS;
 	return build_datasend(BROADCAST,
 											  ((join.hashid / 65536) ^ join.hashid),
@@ -439,8 +442,7 @@ static int join_read(ulong_t start, ulong_t timeout)
 
 	for (pipe=nrf24l01_prx_pipe_available(); pipe!=NRF24L01_NO_PIPE; pipe=nrf24l01_prx_pipe_available()) {
 		len = nrf24l01_prx_data(&data, sizeof(data));
-		TRACE("pipe:%d len:%d data.msg.join.hashid:%#x == hashid=%#x\n", pipe, len, data.msg.join.hashid, ((nrf24_join_local*)m_join_data->raw)->hashid);
-		DUMP_DATA(" ", pipe, &data, len >= sizeof(data.hdr) ? len : 0);
+		DUMP_DATA("JOIN: ", pipe, &data, len >= sizeof(data.hdr) ? len : 0);
 		if (len == (sizeof(data.hdr)+sizeof(nrf24_join_local)) &&
 			pipe == BROADCAST &&
 			data.hdr.msg_type == NRF24_MSG_JOIN_RESULT &&
@@ -454,6 +456,7 @@ static int join_read(ulong_t start, ulong_t timeout)
 
 static int join(bool reset)
 {
+	static nrf24_join_local *pjoin = NULL;
 	static int	state = eJOIN,
 					 	ch = CH_MIN,
 					 	ch0 = CH_MIN;
@@ -464,19 +467,20 @@ static int join(bool reset)
 	if (reset) {
 		ch = nrf24l01_get_channel();
 		ch0 = ch;
-		m_join_data->retry = JOIN_RETRY + get_random_value(JOIN_RETRY, 1);
+		pjoin = (nrf24_join_local*)m_join_data->raw;
+		m_join_data->retry = pjoin->data = get_random_value(JOIN_RETRY, 2, JOIN_RETRY);
 		state = eJOIN;
 	}
 
 	switch(state) {
 	case eJOIN:
+		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
+		TRACE("Server joins ch#%d retry=%d/%d delay=%ld\n", ch, pjoin->data, m_join_data->retry, delay);
 		send_payload(m_join_data);
 		m_join_data->offset = 0;
 		m_join_data->offset_retry = 0;
 		nrf24l01_set_prx();
 		start = tline_ms();
-		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS);
-		TRACE("Server joins ch#%d retry=%d delay=%ld\n", ch, m_join_data->retry, delay);
 		state = eJOIN_PENDING;
 		break;
 
@@ -485,8 +489,8 @@ static int join(bool reset)
 		break;
 
 	case eJOIN_TIMEOUT:
-		if (--m_join_data->retry == 0) {
-			printf("Server join on channel #%d\n", nrf24l01_get_channel());
+		if (--pjoin->data == 0) {
+			fprintf(stdout, "Server join on channel #%d\n", nrf24l01_get_channel());
 			ret = ePRX;
 			break;
 		}
@@ -506,7 +510,7 @@ static int join(bool reset)
 			break;
 		}
 
-		m_join_data->retry = JOIN_RETRY + get_random_value(JOIN_RETRY, 1);
+		m_join_data->retry = pjoin->data = get_random_value(JOIN_RETRY, 2, JOIN_RETRY);
 		state = eJOIN;
 		break;
 	}
@@ -603,16 +607,13 @@ int nrf24l01_server_open(int socket, int channel)
 		return ERROR;
 	}
 
-	srand(time(NULL) ^ getpid());
-
 	m_join_data = build_join_msg();
 	if (m_join_data == NULL) {
 		errno = ENOMEM;
 		return ERROR;
 	}
-	DUMP_DATA("Join Data:", -1, m_join_data, m_join_data->len + sizeof(data_t));
 
-	printf("Server try to join on channel #%d\n", nrf24l01_get_channel());
+	fprintf(stdout, "Server try to join on channel #%d\n", nrf24l01_get_channel());
 
 	g_mutex_init(&G_LOCK_NAME(m_prx_list));
 	g_mutex_init(&G_LOCK_NAME(m_ptx_list));
