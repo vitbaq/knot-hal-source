@@ -113,15 +113,16 @@ static G_LOCK_DEFINE(m_prx_list);
 static void client_free(gpointer pentry)
 {
 	close(((client_t*)pentry)->fds.srv);
+	g_free(((client_t*)pentry)->rxmsg);
 	g_free(pentry);
 }
 
-static inline gint state_match(gconstpointer pentry, gconstpointer pdata)
+static gint state_match(gconstpointer pentry, gconstpointer pdata)
 {
 	return ((const client_t*)pentry)->state - *((const int*)pdata);
 }
 
-static inline gint join_match(gconstpointer pentry, gconstpointer pdata)
+static gint join_match(gconstpointer pentry, gconstpointer pdata)
 {
 	return !(((const client_t*)pentry)->net_addr == ((const nrf24_payload*)pdata)->hdr.net_addr &&
 				  ((const client_t*)pentry)->hashid == ((const nrf24_payload*)pdata)->msg.join.hashid);
@@ -150,7 +151,7 @@ static void release_server(void)
 	INIT_LIST_HEAD(&m_prx_list);
 }
 
-static inline int get_random_value(int interval, int ntime, int min)
+static int get_random_value(int interval, int ntime, int min)
 {
 	int value;
 
