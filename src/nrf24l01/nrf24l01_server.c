@@ -24,21 +24,21 @@
 //#define TRACE_ALL
 #include "debug.h"
 #ifdef TRACE_ALL
-#define DUMP_DATA		dump_data
+#define DUMP_DATA	dump_data
 #else
 #define DUMP_DATA
 #endif
 
 // defines constant time values
-#define POLLTIME_MS											10
-#define SEND_INTERVAL									NRF24_TIMEOUT_MS	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
-#define SEND_DELAY_MS									1
+#define POLLTIME_MS			10
+#define SEND_INTERVAL	NRF24_TIMEOUT_MS	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
+#define SEND_DELAY_MS	1
 
 // defines constant retry values
 #define JOIN_RETRY			NRF24_RETRIES
 #define SEND_RETRY			20
 
-#define BROADCAST		NRF24L01_PIPE0_ADDR
+#define BROADCAST			NRF24L01_PIPE0_ADDR
 
 #define SET_ERROR(e)		(-(e*65536))
 #define GET_ERROR(v)		((-v)/65536)
@@ -64,7 +64,7 @@ enum {
 	ePTX
 } ;
 
-typedef struct  __attribute__ ((packed)) {
+typedef struct {
 	struct list_head	node;
 	int	len,
 			offset,
@@ -91,15 +91,15 @@ typedef struct  {
 	data_t			*rxmsg;
 } client_t;
 
-static volatile int	m_fd = SOCKET_INVALID,
-								m_state = eUNKNOWN,
-								m_nref = 0;
-static GThread *m_gthread = NULL;
-static GMainLoop *m_loop = NULL;
-static GSList			*m_pclients = NULL;
-static client_t		*m_client_pipes[NRF24L01_PIPE_ADDR_MAX] =  { NULL, NULL, NULL, NULL, NULL };
-static int64_t		m_naccept = 0;
-static data_t			*m_join_data = NULL;
+static volatile int		m_fd = SOCKET_INVALID,
+									m_state = eUNKNOWN,
+									m_nref = 0;
+static GThread			*m_gthread = NULL;
+static GMainLoop	*m_loop = NULL;
+static GSList				*m_pclients = NULL;
+static client_t			*m_client_pipes[NRF24L01_PIPE_ADDR_MAX] =  { NULL, NULL, NULL, NULL, NULL };
+static int64_t			m_naccept = 0;
+static data_t				*m_join_data = NULL;
 
 static LIST_HEAD(m_ptx_list);
 static G_LOCK_DEFINE(m_ptx_list);
@@ -107,6 +107,9 @@ static G_LOCK_DEFINE(m_ptx_list);
 static LIST_HEAD(m_prx_list);
 static G_LOCK_DEFINE(m_prx_list);
 
+/*
+ * Local functions
+ */
 static void client_free(gpointer pentry)
 {
 	close(((client_t*)pentry)->fds.srv);
@@ -589,6 +592,10 @@ static gpointer service_thread(gpointer dummy)
     g_main_loop_run(m_loop);
     return NULL;
 }
+
+/*
+ * Global functions
+ */
 
 int nrf24l01_server_open(int socket, int channel)
 {
