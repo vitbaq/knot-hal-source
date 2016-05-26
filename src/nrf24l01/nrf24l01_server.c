@@ -237,7 +237,9 @@ static int send_payload(data_t *pdata)
 	DUMP_DATA("SEND: ", pdata->pipe, &payload, len + sizeof(nrf24_header));
 	nrf24l01_set_ptx(pdata->pipe);
 	nrf24l01_ptx_data(&payload, len + sizeof(nrf24_header), pdata->pipe != BROADCAST);
-	return nrf24l01_ptx_wait_datasent();
+	len = nrf24l01_ptx_wait_datasent();
+	nrf24l01_set_prx();
+	return len;
 }
 
 static inline void put_ptx_queue(data_t *pd)
@@ -407,7 +409,6 @@ static int prx_service(void)
 				list_move_tail(&pdata->node, &m_ptx_list);
 				G_UNLOCK(m_ptx_list);
 			}
-			nrf24l01_set_prx();
 			send_state = eTX_FIRE;
 			break;
 		}
@@ -479,7 +480,6 @@ static int join(bool reset)
 		send_payload(m_join_data);
 		m_join_data->offset = 0;
 		m_join_data->offset_retry = 0;
-		nrf24l01_set_prx();
 		start = tline_ms();
 		state = eJOIN_PENDING;
 		break;
