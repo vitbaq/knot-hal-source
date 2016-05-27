@@ -21,7 +21,7 @@
 #include "util.h"
 #include "list.h"
 
-//#define TRACE_ALL
+#define TRACE_ALL
 #include "debug.h"
 #ifdef TRACE_ALL
 #define DUMP_DATA	dump_data
@@ -253,29 +253,83 @@ static inline void put_ptx_queue(data_t *pd)
 	G_UNLOCK(m_ptx_list);
 }
 
+static gboolean client_watch(GIOChannel *io, GIOCondition cond,
+			      gpointer user_data)
+{
+	char msg[32];
+	client_t *pc = (client_t *)user_data;
+	ssize_t nbytes;
+	int sock;
+
+	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
+		return FALSE;
+	}
+
+	sock = g_io_channel_unix_get_fd(io);
+
+	nbytes = recv(sock, msg, sizeof(msg), 0);
+	if (nbytes < 0) {
+		fprintf(stderr, "recv() error - %s(%d)\n", strerror(errno), errno);
+		return FALSE;
+	}
+
+	TRACE("MSG(%ld)>> '%s'\n", nbytes, msg);
+	return TRUE;
+}
+
+static void client_destroy(gpointer user_data)
+{
+	client_t *pc = user_data;
+	fprintf(stdout, "pipe#%d disconnected\n", pc->pipe);
+	m_pclients = g_slist_remove(m_pclients, pc);
+	client_free(pc);
+}
+
 static bool set_new_client(int newpipe, nrf24_payload *ppl, int len)
 {
 	client_t *pc;
+	GIOChannel *sock_io;
 
 	if (g_slist_find_custom(m_pclients, ppl, join_match) != NULL) {
 		return false;
 	}
 
 	pc = g_new0(client_t, 1);
-	if (pc == NULL || socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, (int*)&pc->fds) < 0) {
+	if (pc == NULL || socketpair(AF_LOCAL, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, (int*)&pc->fds) < 0) {
 		TERROR("socketpair(): %s\n", strerror(errno));
 		g_free(pc);
 		return false;
 	}
 
+	sock_io = g_io_channel_unix_new(pc->fds.srv);
+	if(sock_io == NULL)
+	{
+		client_free(pc);
+		TERROR("error - node channel creation failure\n");
+		return false;
+	}
+
+	///* Increments the reference count of session */
+	//++ps->ref;
 	pc->state = eOPEN;
 	pc->pipe = newpipe;
 	pc->net_addr = ppl->hdr.net_addr;
 	pc->hashid = ppl->msg.join.hashid;
 	pc->heartbeat_sec = tline_sec();
 	m_client_pipes[newpipe] = pc;
+
+	g_io_channel_set_close_on_unref(sock_io, FALSE);
+
+	/* Watch for unix socket disconnection */
+	g_io_add_watch_full(sock_io, G_PRIORITY_DEFAULT,
+				G_IO_HUP | G_IO_NVAL | G_IO_ERR | G_IO_IN,
+				client_watch, pc, client_destroy);
+	/* Keep only one ref: GIOChannel watch */
+	g_io_channel_unref(sock_io);
+
 	m_pclients = g_slist_append(m_pclients, pc);
 	eventfd_write(m_fd, 1);
+	fprintf(stdout, "pipe#%d connected\n", newpipe);
 	return true;
 }
 
