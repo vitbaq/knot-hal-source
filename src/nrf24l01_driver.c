@@ -6,11 +6,13 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-#include <stdio.h>
+#define _GNU_SOURCE         /* For POLLRDHUP */
+#include <poll.h>
 
 #include "abstract_driver.h"
-#include "nrf24l01.h"
+
 //#include "nrf24l01_client.h"
+#include "nrf24l01.h"
 
 #ifndef ARDUINO
 #include "nrf24l01_server.h"
@@ -19,6 +21,8 @@ int errno = SUCCESS;
 #endif
 
 #define NRF24L01_DRIVER_NAME		"nRF24L01 driver"
+
+#define POLLTIME_MS			10
 
 enum {
 	eINVALID,
@@ -41,7 +45,7 @@ static int nrf24_socket(void)
 	}
 
 #ifndef ARDUINO
-	m_fd = eventfd(0, EFD_CLOEXEC);
+	m_fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (m_fd < 0) {
 		return ERROR;
 	}
@@ -86,6 +90,7 @@ static int nrf24_listen(int socket, int channel)
 {
 #ifndef ARDUINO
 	int result;
+	struct sockaddr_un addr;
 
 	if (m_fd == SOCKET_INVALID || socket != m_fd) {
 		errno = EBADF;
@@ -93,6 +98,18 @@ static int nrf24_listen(int socket, int channel)
 	}
 	if (m_state != eUNKNOWN) {
 		errno = EACCES;
+		return ERROR;
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	/* Abstract namespace: first character must be null */
+	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE);
+	if (bind(m_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+		return ERROR;
+	}
+
+	if (listen(m_fd, 5) < 0) {
 		return ERROR;
 	}
 
@@ -104,25 +121,6 @@ static int nrf24_listen(int socket, int channel)
 		m_state = eSERVER;
 	}
 	return  result;
-#else
-	errno = EPERM;
-	return ERROR;
-#endif
-}
-
-static int nrf24_accept(int socket)
-{
-#ifndef ARDUINO
-	if (m_fd == SOCKET_INVALID || socket != m_fd) {
-		errno = EBADF;
-		return ERROR;
-	}
-	if (m_state != eSERVER) {
-		errno = EACCES;
-		return ERROR;
-	}
-
-	return nrf24l01_server_accept(socket);
 #else
 	errno = EPERM;
 	return ERROR;
@@ -165,60 +163,30 @@ static int nrf24_available(int socket)
 	}
 #ifndef ARDUINO
 	if (m_state == eSERVER) {
-		return nrf24l01_server_available(socket);
+		struct pollfd fd_poll;
+
+		fd_poll.fd = socket;
+		fd_poll.events = POLLIN | POLLPRI | POLLRDHUP;
+		fd_poll.revents = 0;
+		//returns: 1 for socket available,
+		//				 0 for no available,
+		//				 or -1 for errors.
+		return poll(&fd_poll, 1, POLLTIME_MS);
 	}
 #endif
 	return 0;
 }
 
-static int nrf24_cancel(int socket)
+static void nrf24_service(void)
 {
-	if (socket == SOCKET_INVALID) {
-		errno = EBADF;
-		return ERROR;
-	}
-	if (m_state == eUNKNOWN) {
-		errno = EACCES;
-		return ERROR;
-	}
-
 	if (m_state == eCLIENT) {
-		//return nrf24l01_client_cancel(socket);
+		//nrf24l01_client_service();
 	}
 #ifndef ARDUINO
 	if (m_state == eSERVER) {
-		return nrf24l01_server_cancel(socket);
+		//nrf24l01_server_service();
 	}
 #endif
-	return SUCCESS;
-}
-
-static size_t nrf24_recv(int socket, void *buffer, size_t len)
-{
-	if (socket == SOCKET_INVALID) {
-		errno = EBADF;
-		return ERROR;
-	}
-	if (socket == m_fd && m_state != eCLIENT) {
-		errno = EACCES;
-		return ERROR;
-	}
-
-	return 0;
-}
-
-static size_t nrf24_send(int socket, const void *buffer, size_t len)
-{
-	if (socket == SOCKET_INVALID) {
-		errno = EBADF;
-		return ERROR;
-	}
-	if (socket == m_fd && m_state != eCLIENT) {
-		errno = EACCES;
-		return ERROR;
-	}
-
-	return 0;
 }
 
 static int nrf24_probe(void)
@@ -239,35 +207,18 @@ static void nrf24_remove(void)
 	}
 }
 
-static void nrf24_service(void)
-{
-	if (m_state == eCLIENT) {
-		//nrf24l01_client_service();
-	}
-#ifndef ARDUINO
-	if (m_state == eSERVER) {
-		//nrf24l01_server_service();
-	}
-#endif
-}
-
 /*
  * HAL interface
  */
 abstract_driver_t nrf24l01_driver = {
-	.socket = nrf24_socket,
-	.close = nrf24_close,
-	.listen = nrf24_listen,
-	.accept = nrf24_accept,
-	.connect = nrf24_connect,
-
-	.available = nrf24_available,
-	.cancel = nrf24_cancel,
-	.recv = nrf24_recv,
-	.send = nrf24_send,
-
 	.name = NRF24L01_DRIVER_NAME,
 	.probe = nrf24_probe,
 	.remove = nrf24_remove,
+
+	.socket = nrf24_socket,
+	.close = nrf24_close,
+	.listen = nrf24_listen,
+	.connect = nrf24_connect,
+	.available = nrf24_available,
 	.service = nrf24_service
 };

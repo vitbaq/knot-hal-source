@@ -6,6 +6,11 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
+#ifndef ARDUINO
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#endif
 
 #ifndef __ABSTRACT_DRIVER_H__
 #define __ABSTRACT_DRIVER_H__
@@ -48,21 +53,18 @@ extern int errno;
  */
 
 typedef struct {
-	int (*socket)(void);
-	int (*close)(int sockfd);
-	int (*listen)(int sockfd, int backlog);
-	int (*accept)(int srv_sockfd);
-	int (*connect)(int cli_sockfd, const void *addr, size_t len);
-
-	int (*available)(int sockfd);
-	int (*cancel)(int sockfd);
-	size_t (*recv)(int sockfd, void *buffer, size_t len);
-	size_t (*send)(int sockfd, const void *buffer, size_t len);
-
 	const char *name;
 	int (*probe)(void);
 	void (*remove)(void);
+
+	int (*socket)(void);
+	int (*close)(int sockfd);
+	int (*listen)(int sockfd, int backlog);
+	int (*connect)(int cli_sockfd, const void *addr, size_t len);
+	int (*available)(int sockfd);
 	void (*service)(void);
+	ssize_t (*read)(int sockfd, void *buffer, size_t len);
+	ssize_t (*write)(int sockfd, const void *buffer, size_t len);
 } abstract_driver_t;
 
 extern abstract_driver_t nrf24l01_driver;

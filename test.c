@@ -58,7 +58,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	sock = g_io_channel_unix_get_fd(io);
 
-	nbytes = nrf24l01_driver.recv(sock, msg, sizeof(msg));
+	nbytes = read(sock, msg, sizeof(msg));
 	if (nbytes < 0) {
 		fprintf(stderr, "recv() error - %s(%d)\n", strerror(errno), errno);
 		return FALSE;
@@ -101,7 +101,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	}
 
 	srv_sock = g_io_channel_unix_get_fd(io);
-	sockfd = nrf24l01_driver.accept(srv_sock);
+	sockfd = accept(srv_sock, NULL, NULL);
 	if (sockfd < 0) {
 		fprintf(stderr, "accept(%d): %s\n", -sockfd, strerror(-sockfd));
 		return FALSE;
@@ -111,7 +111,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	ps = g_new0(session_t, 1);
 	if(ps == NULL)
 	{
-		nrf24l01_driver.close(sockfd);
+		close(sockfd);
 		fprintf(stderr, "error - session creation failure\n");
 		return TRUE;
 	}
@@ -119,7 +119,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	node_io = g_io_channel_unix_new(sockfd);
 	if(node_io == NULL)
 	{
-		nrf24l01_driver.close(sockfd);
+		close(sockfd);
 		g_free(ps);
 		fprintf(stderr, "error - node channel creation failure\n");
 		return TRUE;

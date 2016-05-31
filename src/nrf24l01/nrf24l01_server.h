@@ -7,9 +7,8 @@
  *
  */
 #ifndef ARDUINO
-#include <sys/eventfd.h>
 #include <errno.h>
-#include <unistd.h>
+#include <sys/un.h>
 
 #ifndef __NRF24L01_SERVER_H__
 #define __NRF24L01_SERVER_H__
@@ -18,11 +17,13 @@
 extern "C"{
 #endif
 
+/* Abstract unit socket namespace */
+#define KNOT_UNIX_SOCKET				"knot_nrf24l01"
+#define KNOT_UNIX_SOCKET_SIZE		(sizeof(KNOT_UNIX_SOCKET) - 1)
+
 int nrf24l01_server_open(int socket, int channel);
 int nrf24l01_server_close(int socket);
-int nrf24l01_server_accept(int socket);
 int nrf24l01_server_available(int socket);
-int nrf24l01_server_cancel(int socket);
 
 #ifdef __cplusplus
 } // extern "C"

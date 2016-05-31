@@ -8,12 +8,11 @@
 */
 #ifndef ARDUINO
 
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <glib.h>
 #include <sys/socket.h>
-#include <sys/poll.h>
 #include <inttypes.h>
+#include <fcntl.h>
 
 #include "nrf24l01_server.h"
 #include "nrf24l01.h"
@@ -30,18 +29,14 @@
 #endif
 
 // defines constant time values
-#define POLLTIME_MS			10
 #define SEND_INTERVAL	NRF24_TIMEOUT_MS	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
 #define SEND_DELAY_MS	1
 
 // defines constant retry values
 #define JOIN_RETRY			NRF24_RETRIES
-#define SEND_RETRY			20
+#define SEND_RETRY			NRF24_RETRIES
 
 #define BROADCAST			NRF24L01_PIPE0_ADDR
-
-#define SET_ERROR(e)		(-(e*65536))
-#define GET_ERROR(v)		((-v)/65536)
 
 enum {
 	eUNKNOWN,
@@ -76,14 +71,8 @@ typedef struct {
 					raw[];
 } data_t;
 
-typedef struct  __attribute__ ((packed)) {
-	int	cli;
-	int 	srv;
-} fds_t;
-
 typedef struct  {
-	fds_t			fds;
-	int				state,
+	int				fdsock,
 						pipe;
 	uint16_t		net_addr;
 	uint32_t		hashid;
@@ -92,8 +81,7 @@ typedef struct  {
 } client_t;
 
 static volatile int		m_fd = SOCKET_INVALID,
-									m_state = eUNKNOWN,
-									m_nref = 0;
+									m_state = eUNKNOWN;
 static GThread			*m_gthread = NULL;
 static GMainLoop	*m_loop = NULL;
 static GSList				*m_pclients = NULL;
@@ -112,14 +100,9 @@ static G_LOCK_DEFINE(m_prx_list);
  */
 static void client_free(gpointer pentry)
 {
-	close(((client_t*)pentry)->fds.srv);
+	close(((client_t*)pentry)->fdsock);
 	g_free(((client_t*)pentry)->rxmsg);
 	g_free(pentry);
-}
-
-static gint state_match(gconstpointer pentry, gconstpointer pdata)
-{
-	return ((const client_t*)pentry)->state - *((const int*)pdata);
 }
 
 static gint join_match(gconstpointer pentry, gconstpointer pdata)
@@ -128,10 +111,19 @@ static gint join_match(gconstpointer pentry, gconstpointer pdata)
 				  ((const client_t*)pentry)->hashid == ((const nrf24_payload*)pdata)->msg.join.hashid);
 }
 
-static void release_server(void)
+static void server_cleanup(void)
 {
 	data_t *pdata,
 				*pnext;
+
+	if (m_pclients != NULL) {
+		g_slist_free_full(m_pclients, client_free);
+		m_pclients = NULL;
+	}
+	memset(m_client_pipes, 0, sizeof(m_client_pipes));
+
+	g_free(m_join_data);
+	m_join_data = NULL;
 
 	TRACE("ptx_list clear:\n");
 	list_for_each_entry_safe(pdata, pnext, &m_ptx_list, node) {
@@ -167,16 +159,6 @@ static int get_random_value(int interval, int ntime, int min)
 		value += min;
 	}
 	return value;
-}
-
-static int poll_fd(int fd, long int timeout)
-{
-	struct pollfd fd_poll;
-
-	fd_poll.fd = fd;
-	fd_poll.events = POLLIN | POLLPRI | POLLRDHUP;
-	fd_poll.revents = 0;
-	return poll(&fd_poll, 1, timeout);
 }
 
 static int get_freepipe(void)
@@ -253,23 +235,19 @@ static inline void put_ptx_queue(data_t *pd)
 	G_UNLOCK(m_ptx_list);
 }
 
-static gboolean client_watch(GIOChannel *io, GIOCondition cond,
-			      gpointer user_data)
+static gboolean client_watch(GIOChannel *io, GIOCondition cond, gpointer user_data)
 {
 	char msg[32];
-	client_t *pc = (client_t *)user_data;
+	client_t *pc = (client_t*)user_data;
 	ssize_t nbytes;
-	int sock;
 
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
 		return FALSE;
 	}
 
-	sock = g_io_channel_unix_get_fd(io);
-
-	nbytes = recv(sock, msg, sizeof(msg), 0);
+	nbytes = read(pc->fdsock, msg, sizeof(msg));
 	if (nbytes < 0) {
-		fprintf(stderr, "recv() error - %s(%d)\n", strerror(errno), errno);
+		fprintf(stderr, "read() error - %s(%d)\n", strerror(errno), errno);
 		return FALSE;
 	}
 
@@ -285,40 +263,64 @@ static void client_destroy(gpointer user_data)
 	client_free(pc);
 }
 
-static bool set_new_client(int newpipe, nrf24_payload *ppl, int len)
+static int set_new_client(nrf24_payload *ppl, int len)
 {
+	int	sock,
+			pipe;
+	struct sockaddr_un addr;
 	client_t *pc;
 	GIOChannel *sock_io;
 
-	if (g_slist_find_custom(m_pclients, ppl, join_match) != NULL) {
-		return false;
+	GSList *pentry = g_slist_find_custom(m_pclients, ppl, join_match);
+	if (pentry != NULL) {
+		return ((client_t*)pentry->data)->pipe;
+	}
+
+	pipe = get_freepipe();
+	if (pipe == NRF24L01_NO_PIPE) {
+		return NRF24L01_NO_PIPE;
+	}
+
+	sock = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+	if (sock < 0) {
+		TERROR(" >socket() failure: %s\n", strerror(errno));
+		return NRF24L01_NO_PIPE;
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	/* abstract namespace: first character must be null */
+	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE);
+	if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+		TERROR(" >connect() failure: %s\n", strerror(errno));
+		close(sock);
+		return NRF24L01_NO_PIPE;
 	}
 
 	pc = g_new0(client_t, 1);
-	if (pc == NULL || socketpair(AF_LOCAL, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, (int*)&pc->fds) < 0) {
-		TERROR("socketpair(): %s\n", strerror(errno));
-		g_free(pc);
-		return false;
+	if (pc == NULL) {
+		TERROR("client alloc error: %s\n", strerror(errno));
+		close(sock);
+		return NRF24L01_NO_PIPE;
 	}
 
-	sock_io = g_io_channel_unix_new(pc->fds.srv);
-	if(sock_io == NULL)
-	{
-		client_free(pc);
-		TERROR("error - node channel creation failure\n");
-		return false;
-	}
-
-	///* Increments the reference count of session */
-	//++ps->ref;
-	pc->state = eOPEN;
-	pc->pipe = newpipe;
+	pc->fdsock = sock;
+	pc->pipe = pipe;
 	pc->net_addr = ppl->hdr.net_addr;
 	pc->hashid = ppl->msg.join.hashid;
 	pc->heartbeat_sec = tline_sec();
-	m_client_pipes[newpipe] = pc;
+
+	sock_io = g_io_channel_unix_new(sock);
+	if(sock_io == NULL)
+	{
+		TERROR("error - node channel creation failure\n");
+		client_free(pc);
+		return NRF24L01_NO_PIPE;
+	}
 
 	g_io_channel_set_close_on_unref(sock_io, FALSE);
+	m_pclients = g_slist_append(m_pclients, pc);
+	m_client_pipes[pipe] = pc;
 
 	/* Watch for unix socket disconnection */
 	g_io_add_watch_full(sock_io, G_PRIORITY_DEFAULT,
@@ -327,10 +329,8 @@ static bool set_new_client(int newpipe, nrf24_payload *ppl, int len)
 	/* Keep only one ref: GIOChannel watch */
 	g_io_channel_unref(sock_io);
 
-	m_pclients = g_slist_append(m_pclients, pc);
-	eventfd_write(m_fd, 1);
-	fprintf(stdout, "pipe#%d connected\n", newpipe);
-	return true;
+	fprintf(stdout, "pipe#%d connected\n", pipe);
+	return pipe;
 }
 
 static void check_heartbeat(gpointer pentry, gpointer user_data)
@@ -361,7 +361,7 @@ static void check_heartbeat(gpointer pentry, gpointer user_data)
 static int prx_service(void)
 {
 	nrf24_payload	data;
-	int	pipe, freepipe,
+	int	pipe,
 			len;
 	client_t *pc;
 
@@ -378,12 +378,8 @@ static int prx_service(void)
 					break;
 				}
 				data.hdr.msg_type = NRF24_MSG_JOIN_RESULT;
-				data.msg.join.result = NRF24_ECONNREFUSED;
-				freepipe = get_freepipe();
-				if (freepipe != NRF24L01_NO_PIPE && set_new_client(freepipe, &data, len)) {
-					data.msg.join.data = freepipe;
-					data.msg.join.result = NRF24_SUCCESS;
-				}
+				data.msg.join.data = set_new_client(&data, len);
+				data.msg.join.result = (data.msg.join.data != NRF24L01_NO_PIPE) ? NRF24_SUCCESS : NRF24_ECONNREFUSED;
 				put_ptx_queue(build_datasend(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
 				break;
 
@@ -579,56 +575,54 @@ static gboolean server_service(gpointer dummy)
 {
 	gboolean result = G_SOURCE_CONTINUE;
 
-	if (++m_nref == 1) {
-		if (m_fd == SOCKET_INVALID && m_state != eUNKNOWN) {
-			m_state = eCLOSE;
-		} else if (m_fd != SOCKET_INVALID && m_state == eUNKNOWN) {
-			m_state = eOPEN;
-		}
-		switch(m_state) {
-		case eCLOSE:
-			nrf24l01_set_standby();
-			nrf24l01_close_pipe(5);
-			nrf24l01_close_pipe(4);
-			nrf24l01_close_pipe(3);
-			nrf24l01_close_pipe(2);
-			nrf24l01_close_pipe(1);
-			nrf24l01_close_pipe(0);
-			if (m_pclients != NULL) {
-				g_slist_free_full(m_pclients, client_free);
-				m_pclients = NULL;
-			}
-			memset(m_client_pipes, 0, sizeof(m_client_pipes));
-			m_state = eUNKNOWN;
-			g_main_loop_quit(m_loop);
-			result = G_SOURCE_REMOVE;
-			break;
-
-		case eOPEN:
-			nrf24l01_open_pipe(0, NRF24L01_PIPE0_ADDR);
-			nrf24l01_open_pipe(1, NRF24L01_PIPE1_ADDR);
-			nrf24l01_open_pipe(2, NRF24L01_PIPE2_ADDR);
-			nrf24l01_open_pipe(3, NRF24L01_PIPE3_ADDR);
-			nrf24l01_open_pipe(4, NRF24L01_PIPE4_ADDR);
-			nrf24l01_open_pipe(5, NRF24L01_PIPE5_ADDR);
-			m_state = join(true);
-			break;
-
-		case eJOIN:
-			m_state = join(false);
-			break;
-
-		case eJOIN_CHANNEL_BUSY:
-			eventfd_write(m_fd, SET_ERROR(EUSERS));
-			m_state = eCLOSE_PENDING;
-			break;
-
-		case ePRX:
-			m_state = prx_service();
-			break;
-		}
+	if (m_fd == SOCKET_INVALID || (fcntl(m_fd, F_GETFL) < 0 && errno == EBADF)) {
+		m_state = eCLOSE;
+	} else 	if (m_state == eUNKNOWN) {
+		m_state = eOPEN;
 	}
-	--m_nref;
+	switch(m_state) {
+	case eCLOSE:
+		nrf24l01_set_standby();
+		nrf24l01_close_pipe(5);
+		nrf24l01_close_pipe(4);
+		nrf24l01_close_pipe(3);
+		nrf24l01_close_pipe(2);
+		nrf24l01_close_pipe(1);
+		nrf24l01_close_pipe(0);
+		server_cleanup();
+		g_main_loop_quit(m_loop);
+		m_state = eUNKNOWN;
+		result = G_SOURCE_REMOVE;
+		break;
+
+	case eOPEN:
+		m_join_data = build_join_msg();
+		if (m_join_data == NULL) {
+			break;
+		}
+		g_mutex_init(&G_LOCK_NAME(m_prx_list));
+		g_mutex_init(&G_LOCK_NAME(m_ptx_list));
+		nrf24l01_open_pipe(0, NRF24L01_PIPE0_ADDR);
+		nrf24l01_open_pipe(1, NRF24L01_PIPE1_ADDR);
+		nrf24l01_open_pipe(2, NRF24L01_PIPE2_ADDR);
+		nrf24l01_open_pipe(3, NRF24L01_PIPE3_ADDR);
+		nrf24l01_open_pipe(4, NRF24L01_PIPE4_ADDR);
+		nrf24l01_open_pipe(5, NRF24L01_PIPE5_ADDR);
+		m_state = join(true);
+		break;
+
+	case eJOIN:
+		m_state = join(false);
+		break;
+
+	case eJOIN_CHANNEL_BUSY:
+		m_state = eCLOSE_PENDING;
+		break;
+
+	case ePRX:
+		m_state = prx_service();
+		break;
+	}
 	return result;
 }
 
@@ -645,6 +639,7 @@ static gpointer service_thread(gpointer dummy)
     g_source_attach(timer, context);
     g_source_unref(timer);
     g_main_loop_run(m_loop);
+	g_main_loop_unref(m_loop);
     return NULL;
 }
 
@@ -669,28 +664,15 @@ int nrf24l01_server_open(int socket, int channel)
 		return ERROR;
 	}
 
-	m_join_data = build_join_msg();
-	if (m_join_data == NULL) {
-		errno = ENOMEM;
-		return ERROR;
-	}
-
 	fprintf(stdout, "Server try to join on channel #%d\n", nrf24l01_get_channel());
-
-	g_mutex_init(&G_LOCK_NAME(m_prx_list));
-	g_mutex_init(&G_LOCK_NAME(m_ptx_list));
-	m_naccept = 0;
 	m_fd = socket;
 
 	m_gthread = g_thread_new("service_thread", service_thread, NULL);
 	if (m_gthread == NULL) {
-		g_free(m_join_data);
-		m_join_data = NULL;
 		errno = ENOMEM;
 		return ERROR;
 	}
 
-	errno = SUCCESS;
 	return SUCCESS;
 }
 
@@ -703,79 +685,12 @@ int nrf24l01_server_close(int socket)
 
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
-		eventfd_write(socket, SET_ERROR(EBADF));
 		if (m_gthread != NULL) {
 			g_thread_join(m_gthread);
-			g_main_loop_unref(m_loop);
 			m_gthread == NULL;
 		}
-		g_free(m_join_data);
-		m_join_data = NULL;
-		release_server();
 	}
-	errno = SUCCESS;
 	return SUCCESS;
-}
-
-int nrf24l01_server_accept(int socket)
-{
-	GSList *pentry = NULL;
-	int st;
-
-	if (m_fd == SOCKET_INVALID || socket != m_fd) {
-		errno = EBADF;
-		return ERROR;
-	}
-
-	while (pentry == NULL) {
-		if (m_naccept == 0) {
-			st = eventfd_read(socket, &m_naccept);
-			if (st < 0) {
-				st = ERROR;
-				break;
-			}
-		}
-		if (m_naccept < 0) {
-			errno = GET_ERROR(m_naccept);
-			st = ERROR;
-			break;
-		}
-
-		--m_naccept;
-
-		// find the client in list which is in open state
-		st = eOPEN;
-		pentry = g_slist_find_custom(m_pclients, &st, state_match);
-		if (pentry != NULL) {
-			st = ((client_t*)pentry->data)->fds.cli;
-			((client_t*)pentry->data)->state = ePRX;
-		}
-	}
-	return st;
-}
-
-int nrf24l01_server_cancel(int socket)
-{
-	if (m_fd == SOCKET_INVALID || socket != m_fd) {
-		errno = EBADF;
-		return ERROR;
-	}
-
-	eventfd_write(socket, SET_ERROR(ECANCELED));
-	return SUCCESS;
-}
-
-int nrf24l01_server_available(int socket)
-{
-	if (socket == SOCKET_INVALID) {
-		errno = EBADF;
-		return ERROR;
-	}
-
-	//returns: 1 for socket available,
-	//				 0 for no available,
-	//				 or -1 for errors.
-	return poll_fd(socket, POLLTIME_MS);
 }
 
 #endif		// ARDUINO
