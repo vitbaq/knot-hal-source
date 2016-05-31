@@ -6,6 +6,8 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
+#include <stddef.h>
+
 #ifndef ARDUINO
 #include <unistd.h>
 #include <sys/socket.h>
@@ -63,8 +65,8 @@ typedef struct {
 	int (*connect)(int cli_sockfd, const void *addr, size_t len);
 	int (*available)(int sockfd);
 	void (*service)(void);
-	ssize_t (*read)(int sockfd, void *buffer, size_t len);
-	ssize_t (*write)(int sockfd, const void *buffer, size_t len);
+	//ssize_t (*read)(int sockfd, void *buffer, size_t len);
+	//ssize_t (*write)(int sockfd, const void *buffer, size_t len);
 } abstract_driver_t;
 
 extern abstract_driver_t nrf24l01_driver;

@@ -6,19 +6,16 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
+#ifndef ARDUINO
 #define _GNU_SOURCE         /* For POLLRDHUP */
 #include <poll.h>
+#include "nrf24l01_server.h"
+#endif
 
 #include "abstract_driver.h"
 
 //#include "nrf24l01_client.h"
 #include "nrf24l01.h"
-
-#ifndef ARDUINO
-#include "nrf24l01_server.h"
-#else
-int errno = SUCCESS;
-#endif
 
 #define NRF24L01_DRIVER_NAME		"nRF24L01 driver"
 
@@ -30,6 +27,10 @@ enum {
 	eSERVER,
 	eCLIENT
 } ;
+
+#ifdef ARDUINO
+int errno = SUCCESS;
+#endif
 
 static int	m_state = eINVALID,
 					m_fd = SOCKET_INVALID;
