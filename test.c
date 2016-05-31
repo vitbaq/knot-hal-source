@@ -180,7 +180,6 @@ static int start_server(void)
 	g_io_add_watch(sock_io, cond, accept_cb, NULL);
 	/* Keep only one ref: server watch  */
 	g_io_channel_unref(sock_io);
-
 	return 0;
 }
 

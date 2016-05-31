@@ -590,8 +590,12 @@ static gboolean server_service(gpointer dummy)
 		nrf24l01_close_pipe(1);
 		nrf24l01_close_pipe(0);
 		server_cleanup();
-		g_main_loop_quit(m_loop);
 		m_state = eUNKNOWN;
+		if (m_fd != SOCKET_INVALID) {
+			m_fd = SOCKET_INVALID;
+			m_gthread == NULL;
+		}
+		g_main_loop_quit(m_loop);
 		result = G_SOURCE_REMOVE;
 		break;
 
