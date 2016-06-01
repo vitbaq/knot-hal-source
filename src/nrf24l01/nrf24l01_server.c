@@ -34,7 +34,7 @@
 
 // defines constant retry values
 #define JOIN_RETRY			NRF24_RETRIES
-#define SEND_RETRY			50
+#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - NRF24_TIMEOUT_MS) / NRF24_TIMEOUT_MS)
 
 #define BROADCAST			NRF24L01_PIPE0_ADDR
 
@@ -111,7 +111,9 @@ static int get_freepipe(void)
 
 static inline int set_client(int pipe, client_t *pc)
 {
-	m_client_pipes[pipe-1] = pc;
+	if (pipe > BROADCAST && pipe < (NRF24L01_PIPE_ADDR_MAX+1)) {
+		m_client_pipes[pipe-1] = pc;
+	}
 	return 0;
 }
 
@@ -192,6 +194,7 @@ static data_t *build_datasend(int pipe, int net_addr, int msg_type, pdata_t praw
 	if (msg == NULL) {
 		return NULL;
 	}
+
 	INIT_LIST_HEAD(&msg->node);
 	msg->len = size + len;
 	msg->offset = 0;
@@ -407,14 +410,15 @@ static int prx_service(void)
 				break;
 
 			case NRF24_MSG_HEARTBEAT:
-				if (len != sizeof(nrf24_join_local) || (pc=get_client(pipe)) == NULL ||
+				if (len != sizeof(nrf24_join_local) ||
 					data.msg.join.maj_version > NRF24_VERSION_MAJOR ||
 					data.msg.join.min_version > NRF24_VERSION_MINOR) {
 					break;
 				}
 				data.hdr.msg_type = NRF24_MSG_JOIN_RESULT;
 				data.msg.join.result = NRF24_ECONNREFUSED;
-				if(	pc->net_addr == data.hdr.net_addr && pc->hashid == data.msg.join.hashid) {
+				pc = get_client(pipe);
+				if (pc != NULL && pc->net_addr == data.hdr.net_addr && pc->hashid == data.msg.join.hashid) {
 					pc->heartbeat = tline_ms();
 					data.msg.join.result = NRF24_SUCCESS;
 				}
