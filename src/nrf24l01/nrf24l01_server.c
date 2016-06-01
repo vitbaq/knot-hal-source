@@ -34,7 +34,7 @@
 
 // defines constant retry values
 #define JOIN_RETRY			NRF24_RETRIES
-#define SEND_RETRY			NRF24_RETRIES
+#define SEND_RETRY			50
 
 #define BROADCAST			NRF24L01_PIPE0_ADDR
 
@@ -76,7 +76,7 @@ typedef struct  {
 						pipe;
 	uint16_t		net_addr;
 	uint32_t		hashid;
-	ulong_t		heartbeat_sec;
+	ulong_t		heartbeat;
 	data_t			*rxmsg;
 } client_t;
 
@@ -98,8 +98,31 @@ static G_LOCK_DEFINE(m_prx_list);
 /*
  * Local functions
  */
+static int get_freepipe(void)
+{
+	int 			pipe;
+	client_t	**ppc = m_client_pipes;
+
+	for (pipe=NRF24L01_PIPE_ADDR_MAX; pipe!=0 && *ppc != NULL; --pipe, ++ppc)
+		;
+
+	return (pipe != 0 ? (NRF24L01_PIPE_ADDR_MAX - pipe) + 1 : NRF24L01_NO_PIPE);
+}
+
+static inline int set_client(int pipe, client_t *pc)
+{
+	m_client_pipes[pipe-1] = pc;
+	return 0;
+}
+
+static client_t *get_client(int pipe)
+{
+	return ((pipe > BROADCAST && pipe < (NRF24L01_PIPE_ADDR_MAX+1)) ? m_client_pipes[pipe-1] : NULL);
+}
+
 static void client_free(gpointer pentry)
 {
+	set_client(((client_t*)pentry)->pipe, NULL);
 	close(((client_t*)pentry)->fdsock);
 	g_free(((client_t*)pentry)->rxmsg);
 	g_free(pentry);
@@ -159,22 +182,6 @@ static int get_random_value(int interval, int ntime, int min)
 		value += min;
 	}
 	return value;
-}
-
-static int get_freepipe(void)
-{
-	int 			pipe;
-	client_t	**ppc = m_client_pipes;
-
-	for (pipe=NRF24L01_PIPE_ADDR_MAX; pipe!=0 && *ppc != NULL; --pipe, ++ppc)
-		;
-
-	return (pipe != 0 ? (NRF24L01_PIPE_ADDR_MAX - pipe) + 1 : NRF24L01_NO_PIPE);
-}
-
-static client_t *get_client(int pipe)
-{
-	return ((pipe > BROADCAST && pipe < (NRF24L01_PIPE_ADDR_MAX+1)) ? m_client_pipes[pipe-1] : NULL);
 }
 
 static data_t *build_datasend(int pipe, int net_addr, int msg_type, pdata_t praw, len_t len, data_t *msg)
@@ -308,7 +315,8 @@ static int set_new_client(nrf24_payload *ppl, int len)
 	pc->pipe = pipe;
 	pc->net_addr = ppl->hdr.net_addr;
 	pc->hashid = ppl->msg.join.hashid;
-	pc->heartbeat_sec = tline_sec();
+	pc->heartbeat = tline_ms();
+	set_client(pipe, pc);
 
 	sock_io = g_io_channel_unix_new(sock);
 	if(sock_io == NULL)
@@ -320,7 +328,6 @@ static int set_new_client(nrf24_payload *ppl, int len)
 
 	g_io_channel_set_close_on_unref(sock_io, FALSE);
 	m_pclients = g_slist_append(m_pclients, pc);
-	m_client_pipes[pipe] = pc;
 
 	/* Watch for unix socket disconnection */
 	g_io_add_watch_full(sock_io, G_PRIORITY_DEFAULT,
@@ -335,12 +342,19 @@ static int set_new_client(nrf24_payload *ppl, int len)
 
 static void check_heartbeat(gpointer pentry, gpointer user_data)
 {
+	if (tline_out(tline_ms(), ((client_t*)pentry)->heartbeat, NRF24_HEARTBEAT_TIMEOUT_MS)) {
+		close(((client_t*)pentry)->fdsock);
+	}
+}
+
+//static void check_heartbeat(gpointer pentry, gpointer user_data)
+//{
 //	client_t *pc = (client_t*)pentry;
 //	ulong_t	now = tline_ms();
 //
-//	if (tline_out(now, pc->heartbeat_sec, NRF24_HEARTBEAT_TIMEOUT_S)) {
+//	if (tline_out(now, pc->heartbeat, NRF24_HEARTBEAT_TIMEOUT_MS)) {
 //
-//	} else 	if (tline_out(now, pc->heartbeat_sec, NRF24_HEARTBEAT_S)) {
+//	} else 	if (tline_out(now, pc->heartbeat, NRF24_HEARTBEAT_SEND_MS)) {
 //		nrf24_join_local join;
 //
 //		join.maj_version = NRF24_VERSION_MAJOR;
@@ -354,9 +368,9 @@ static void check_heartbeat(gpointer pentry, gpointer user_data)
 //																   &join,
 //																   sizeof(join),
 //																   NULL));
-//		pc->heartbeat_sec = tline_sec();
+//		pc->heartbeat = tline_ms();
 //	}
-}
+//}
 
 static int prx_service(void)
 {
@@ -401,7 +415,7 @@ static int prx_service(void)
 				data.hdr.msg_type = NRF24_MSG_JOIN_RESULT;
 				data.msg.join.result = NRF24_ECONNREFUSED;
 				if(	pc->net_addr == data.hdr.net_addr && pc->hashid == data.msg.join.hashid) {
-					pc->heartbeat_sec = tline_sec();
+					pc->heartbeat = tline_ms();
 					data.msg.join.result = NRF24_SUCCESS;
 				}
 				put_ptx_queue(build_datasend(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
