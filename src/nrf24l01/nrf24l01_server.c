@@ -411,6 +411,7 @@ static int prx_service(void)
 
 			case NRF24_MSG_HEARTBEAT:
 				if (len != sizeof(nrf24_join_local) ||
+					data.msg.join.data != pipe ||
 					data.msg.join.maj_version > NRF24_VERSION_MAJOR ||
 					data.msg.join.min_version > NRF24_VERSION_MINOR) {
 					break;
