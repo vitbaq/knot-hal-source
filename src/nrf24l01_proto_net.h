@@ -11,6 +11,13 @@
 #ifndef __NRF24L01_PROTO_NET_H__
 #define __NRF24L01_PROTO_NET_H__
 
+// protocol version
+#define NRF24_VERSION_MAJOR	1
+#define NRF24_VERSION_MINOR	0
+
+// application packet size maximum
+#define NRF24_APP_PACKET_SIZE_MAX		128
+
 // net layer result codes
 #define NRF24_SUCCESS						0
 #define NRF24_ERROR							-1

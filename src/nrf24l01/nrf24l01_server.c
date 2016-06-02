@@ -19,7 +19,7 @@
 #include "util.h"
 #include "list.h"
 
-#define TRACE_ALL
+//#define TRACE_ALL
 #include "debug.h"
 #ifdef TRACE_ALL
 #define DUMP_DATA	dump_data

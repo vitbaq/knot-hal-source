@@ -18,12 +18,6 @@
 
 #include "abstract_driver.h"
 
-// protocol version
-#define NRF24_VERSION_MAJOR	1
-#define NRF24_VERSION_MINOR	0
-// application packet size maximum
-#define APP_PACKET_SIZE_MAX		128
-
 #define NRF24L01_DRIVER_NAME		"nRF24L01 driver"
 
 #define POLLTIME_MS			10
@@ -37,7 +31,7 @@ enum {
 
 static version_t version =  { NRF24_VERSION_MAJOR,
 									   	   	   	   NRF24_VERSION_MINOR,
-									   	   	   	   APP_PACKET_SIZE_MAX};
+									   	   	   	   NRF24_APP_PACKET_SIZE_MAX };
 
 #ifdef ARDUINO
 int errno = SUCCESS;
