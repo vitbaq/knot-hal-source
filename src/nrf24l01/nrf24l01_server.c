@@ -162,11 +162,13 @@ static void server_cleanup(void)
 	m_pversion = NULL;
 
 	TRACE("ptx_list clear:\n");
+	G_LOCK(m_ptx_list);
 	list_for_each_entry_safe(pdata, pnext, &m_ptx_list, node) {
 		list_del_init(&pdata->node);
 		DUMP_DATA(" ", pdata->pipe, pdata->raw, pdata->len);
 		g_free(pdata);
 	}
+	G_UNLOCK(m_ptx_list);
 	g_mutex_clear(&G_LOCK_NAME(m_ptx_list));
 	INIT_LIST_HEAD(&m_ptx_list);
 }
