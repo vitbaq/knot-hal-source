@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <sys/un.h>
 
+#include "nrf24l01_proto_net.h"
+
 #ifndef __NRF24L01_SERVER_H__
 #define __NRF24L01_SERVER_H__
 
@@ -21,7 +23,7 @@ extern "C"{
 #define KNOT_UNIX_SOCKET				"knot_nrf24l01"
 #define KNOT_UNIX_SOCKET_SIZE		(sizeof(KNOT_UNIX_SOCKET) - 1)
 
-int nrf24l01_server_open(int socket, int channel);
+int nrf24l01_server_open(int socket, int channel, version_t *pversion);
 int nrf24l01_server_close(int socket);
 
 #ifdef __cplusplus

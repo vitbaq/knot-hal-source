@@ -12,10 +12,17 @@
 #include "nrf24l01_server.h"
 #endif
 
-#include "abstract_driver.h"
-
+#include "nrf24l01_proto_net.h"
 //#include "nrf24l01_client.h"
 #include "nrf24l01.h"
+
+#include "abstract_driver.h"
+
+// protocol version
+#define NRF24_VERSION_MAJOR	1
+#define NRF24_VERSION_MINOR	0
+// application packet size maximum
+#define APP_PACKET_SIZE_MAX		128
 
 #define NRF24L01_DRIVER_NAME		"nRF24L01 driver"
 
@@ -27,6 +34,10 @@ enum {
 	eSERVER,
 	eCLIENT
 } ;
+
+static version_t version =  { NRF24_VERSION_MAJOR,
+									   	   	   	   NRF24_VERSION_MINOR,
+									   	   	   	   APP_PACKET_SIZE_MAX};
 
 #ifdef ARDUINO
 int errno = SUCCESS;
@@ -117,7 +128,7 @@ static int nrf24_listen(int socket, int channel)
 	if(channel < CH_MIN)
 		channel = NRF24L01_CHANNEL_DEFAULT;
 
-	result = nrf24l01_server_open(socket, channel);
+	result = nrf24l01_server_open(socket, channel, &version);
 	if (result == SUCCESS) {
 		m_state = eSERVER;
 	}

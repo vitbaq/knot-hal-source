@@ -6,6 +6,8 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
+#include <stdint.h>
+
 #ifndef __NRF24L01_PROTO_NET_H__
 #define __NRF24L01_PROTO_NET_H__
 
@@ -15,10 +17,6 @@
 #define NRF24_INVALID_VERSION		-2
 #define NRF24_ECONNREFUSED		-3
 
-// Protocol version
-#define NRF24_VERSION_MAJOR		01
-#define NRF24_VERSION_MINOR		00
-
 // Network retransmiting parameters
 #define NRF24_TIMEOUT_MS								45
 #define NRF24_HEARTBEAT_SEND_MS			1000
@@ -26,18 +24,16 @@
 #define NRF24_RETRIES											200
 
 // Network messages
-#define NRF24_MSG_INVALID					0x00
-#define NRF24_MSG_JOIN_LOCAL			0x01
-#define NRF24_MSG_UNJOIN_LOCAL	0x02
-#define NRF24_MSG_JOIN_GATEWAY	0x03
-#define NRF24_MSG_JOIN_RESULT		0x04
-#define NRF24_MSG_HEARTBEAT			0x05
-#define NRF24_MSG_APP							0x06
-#define NRF24_MSG_APP_FIRST				0x07
-#define NRF24_MSG_APP_FRAG				0x08
+#define NRF24_GATEWAY_REQ	0x00
+#define NRF24_JOIN_LOCAL			0x01
+#define NRF24_UNJOIN_LOCAL	0x02
+#define NRF24_HEARTBEAT			0x03
+#define NRF24_APP							0x04
+#define NRF24_APP_FIRST			0x05
+#define NRF24_APP_FRAG				0x06
 
 /**
- * struct nrf24_header - net layer message header
+ * struct hdr_t - net layer message header
  * @net_addr: net address
  * @msg_type: message type
  * @offset: message fragment offset
@@ -47,42 +43,58 @@
 typedef struct __attribute__ ((packed)) {
 	uint16_t		net_addr;
 	uint8_t		msg_type;
-} nrf24_header;
+} hdr_t;
 
 // Network message size parameters
 #define NRF24_PW_SIZE							32
-#define NRF24_MSG_PW_SIZE				(NRF24_PW_SIZE - sizeof(nrf24_header))
+#define NRF24_PW_MSG_SIZE				(NRF24_PW_SIZE - sizeof(hdr_t))
 
 /**
- * struct nrf24_join_local - net layer join local message
- * @net_maj_version: protocol version, major number
- * @net_min_version: protocol version, minor number
- * @result: result for the join process
+ * struct version_t - network layer version
+ * @major: protocol version, major number
+ * @minor: protocol version, minor number
+ * @packet_size: application packet size maximum
  *
- * This struct defines the net layer join local message.
+ * This struct defines the network layer version.
  */
 typedef struct __attribute__ ((packed)) {
-	uint8_t				maj_version;
-	uint8_t				min_version;
-	uint32_t				hashid;
-	uint32_t				data;
-	int8_t					result;
-} nrf24_join_local;
+	uint8_t				major;
+	uint8_t				minor;
+	uint16_t				packet_size;
+} version_t;
 
 /**
- * union nrf24_payload - defines a network layer payload
+ * struct join_t - network layer join message
+ * @result: join process result
+ * @version: network layer version
+ * @hashid: id for network
+ * @data: join data
+ *
+ * This struct defines the network layer join message.
+ */
+typedef struct __attribute__ ((packed)) {
+	int8_t					result;
+	version_t			version;
+	uint32_t				hashid;
+	uint32_t				data;
+} join_t;
+
+/**
+ * union payload_t - defines a network layer payload
  * @hdr: net layer message header
- * @msg: application layer message
+ * @result: process result
  * @join: net layer join local message
+ * @raw: raw data of network layer
  *
  * This union defines the network layer payload.
  */
 typedef struct __attribute__ ((packed))  {
-	nrf24_header		hdr;
+	hdr_t			hdr;
 	union {
-		nrf24_join_local	join;
-		uint8_t					raw[NRF24_MSG_PW_SIZE];
+		int8_t		result;
+		join_t		join;
+		uint8_t	raw[NRF24_PW_MSG_SIZE];
 	} msg;
-} nrf24_payload;
+} payload_t;
 
 #endif //	__NRF24L01_PROTO_NET_H__
