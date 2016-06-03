@@ -11,6 +11,7 @@
 #include <poll.h>
 #include "nrf24l01_server.h"
 #endif
+#include <fcntl.h>
 
 #include "nrf24l01_proto_net.h"
 //#include "nrf24l01_client.h"
@@ -45,17 +46,27 @@ static int	m_state = eINVALID,
  */
 static int nrf24_socket(void)
 {
+#ifndef ARDUINO
+	if (m_fd != SOCKET_INVALID && (fcntl(m_fd, F_GETFL) < 0 && errno == EBADF)) {
+		m_fd = SOCKET_INVALID;
+		m_state =  eUNKNOWN;
+	}
+
 	if (m_state == eINVALID || m_fd != SOCKET_INVALID) {
 		errno = EACCES;
 		return ERROR;
 	}
 
-#ifndef ARDUINO
 	m_fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (m_fd < 0) {
 		return ERROR;
 	}
 #else
+	if (m_state == eINVALID || m_fd != SOCKET_INVALID) {
+		errno = EACCES;
+		return ERROR;
+	}
+
 	m_fd = 0;
 #endif
 	return m_fd;
@@ -63,16 +74,15 @@ static int nrf24_socket(void)
 
 static int nrf24_close(int socket)
 {
-	int	state = m_state;
 	if (socket == SOCKET_INVALID) {
 		errno = EBADF;
 		return ERROR;
 	}
 
 #ifndef ARDUINO
-	if (state == eSERVER) {
+	if (m_state == eSERVER) {
 		return nrf24l01_server_close(socket);
-	} else if (state == eCLIENT) {
+	} else if (m_state == eCLIENT) {
 		//return nrf24l01_client_close(socket);
 	}
 	close(socket);
@@ -102,6 +112,7 @@ static int nrf24_listen(int socket, int channel)
 		errno = EBADF;
 		return ERROR;
 	}
+
 	if (m_state != eUNKNOWN) {
 		errno = EACCES;
 		return ERROR;
@@ -141,6 +152,7 @@ static int nrf24_connect(int socket, const void *addr, size_t len)
 		errno = EBADF;
 		return ERROR;
 	}
+
 	if (m_state != eUNKNOWN) {
 		errno = EACCES;
 		return ERROR;
@@ -195,9 +207,19 @@ static void nrf24_service(void)
 #endif
 }
 
+static int nrf24_read(int socket, void *buffer, size_t len)
+{
+	return read(socket, buffer, len);
+}
+
+static int nrf24_write(int socket, const void *buffer, size_t len)
+{
+	return write(socket, buffer, len);
+}
+
 static int nrf24_probe(void)
 {
-	if(m_state)	{
+	if(m_state > eINVALID)	{
 		return SUCCESS;
 	}
 	m_state = (nrf24l01_init() == SUCCESS) ? eUNKNOWN : eINVALID;
@@ -226,5 +248,7 @@ abstract_driver_t nrf24l01_driver = {
 	.listen = nrf24_listen,
 	.connect = nrf24_connect,
 	.available = nrf24_available,
-	.service = nrf24_service
+	.service = nrf24_service,
+	.read = nrf24_read,
+	.write = nrf24_write
 };
