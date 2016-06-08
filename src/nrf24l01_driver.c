@@ -10,11 +10,10 @@
 #define _GNU_SOURCE         /* For POLLRDHUP */
 #include <poll.h>
 #include "nrf24l01_server.h"
-#endif
 #include <fcntl.h>
+#endif
 
-#include "nrf24l01_proto_net.h"
-//#include "nrf24l01_client.h"
+#include "nrf24l01_client.h"
 #include "nrf24l01.h"
 
 #include "abstract_driver.h"
@@ -158,7 +157,12 @@ static int nrf24_connect(int socket, const void *addr, size_t len)
 		return ERROR;
 	}
 
-	//result = nrf24l01_client_open(socket);
+	if (len != sizeof(int) || *((int*)addr) < CH_MIN) {
+		errno = EINVAL;
+		return ERROR;
+	}
+
+	result = nrf24l01_client_open(socket, *((int*)addr), &version);
 	if (result == SUCCESS) {
 		m_state = eCLIENT;
 	}

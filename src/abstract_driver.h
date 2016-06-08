@@ -38,6 +38,15 @@ extern "C"{
 #define	EFAULT			14	/* Bad address */
 #define	EINVAL			22	/* Invalid argument */
 #define	EMFILE			24	/* Too many open files */
+
+#define	ECOMM						70	/* Communication error on send */
+#define	EMSGSIZE				90	/* Message too long */
+#define	ETIMEDOUT				110	/* Connection timed out */
+#define	ECONNREFUSED	111	/* Connection refused */
+#define	EHOSTDOWN			112	/* Host is down */
+#define	EALREADY				114	/* Operation already in progress */
+#define	EINPROGRESS		115	/* Operation now in progress */
+
 extern int errno;
 #endif
 
