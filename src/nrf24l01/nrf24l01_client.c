@@ -14,7 +14,6 @@
 #include "nrf24l01_client.h"
 #include "nrf24l01.h"
 #include "util.h"
-#include "list.h"
 
 //#define TRACE_ALL
 #include "debug.h"
@@ -40,13 +39,10 @@
 #define SEND_DELAY_MS	1
 
 // defines constant retry values
-#define CLIRQ_RETRY			NRF24_RETRIES
-#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - NRF24_TIMEOUT_MS) / NRF24_TIMEOUT_MS)
+#define CLIREQ_RETRY		NRF24_RETRIES
+#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - SEND_INTERVAL) / SEND_INTERVAL)
 
 #define BROADCAST			NRF24L01_PIPE0_ADDR
-#define CLIENT_PIPE			NRF24L01_PIPE0_ADDR
-
-#define NEXT_CH	2
 
 enum {
 	eUNKNOWN,
@@ -65,7 +61,6 @@ enum {
 } ;
 
 typedef struct {
-	struct list_head	node;
 	int16_t	len,
 					offset,
 					retry,
@@ -77,18 +72,16 @@ typedef struct {
 } data_t;
 
 typedef struct  {
-	int				pipe;
 	uint16_t		net_addr;
 	uint32_t		hashid;
 	ulong_t		heartbeat;
+	uint8_t		pipe;
 	data_t			*rxmsg;
 } client_t;
 
-static volatile int		m_fd = SOCKET_INVALID;
-static version_t		*m_pversion = NULL;
-static client_t			m_client;
-
-static LIST_HEAD(m_ptx_list);
+static int				m_fd = SOCKET_INVALID;
+static version_t	*m_pversion = NULL;
+static client_t		m_client;
 
 /*
  * Local functions
@@ -110,20 +103,6 @@ static LIST_HEAD(m_ptx_list);
 //		return (((uint16_t)(intptr_t)&newVariable) - ((uint16_t)(intptr_t)__brkval));
 //	}
 //}
-
-static void server_cleanup(void)
-{
-	data_t *pdata, *pnext;
-
-	m_pversion = NULL;
-
-	TRACE(F("ptx_list clear:\n"));
-	list_for_each_entry_safe(pdata, pnext, &m_ptx_list, node) {
-		list_del_init(&pdata->node);
-		DUMP_DATA(F(" "), pdata->pipe, pdata->raw, pdata->len);
-	}
-	INIT_LIST_HEAD(&m_ptx_list);
-}
 
 static int get_random_value(int interval, int ntime, int min)
 {
@@ -154,7 +133,6 @@ static data_t *build_data(int pipe, int net_addr, int msg_type, data_t *data, le
 		size = msg->len;
 	}
 
-	INIT_LIST_HEAD(&msg->node);
 	msg->len = size + len;
 	msg->offset = 0;
 	msg->pipe = pipe;
@@ -196,30 +174,60 @@ static int send_payload(data_t *pdata)
 	return len;
 }
 
-static inline void put_ptx_queue(data_t *pd)
+static int put_ptx_queue(data_t *pdata)
 {
-	list_move_tail(&pd->node, &m_ptx_list);
+	int	state = eTX_FIRE,
+			result = SUCCESS;
+	ulong_t	start,
+					delay;
+
+	while (state != eTX) {
+		switch (state) {
+		case  eTX_FIRE:
+			start = tline_ms();
+			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
+			state = eTX_GAP;
+			/* No break; fall through intentionally */
+		case eTX_GAP:
+			if (!tline_out(tline_ms(), start, delay)) {
+				break;
+			}
+			state = eTX;
+			/* No break; fall through intentionally */
+		case eTX:
+			result = send_payload(pdata);
+			if (result != SUCCESS) {
+				if (--pdata->retry == 0) {
+					//TODO: next step, error issue to the application if sent NRF24_APP message fail
+					TERROR(F("Failed to send message to the pipe#%d\n"), pdata->pipe);
+				} else {
+					pdata->offset = pdata->offset_retry;
+					state = eTX_FIRE;
+				}
+			} else 	if (pdata->len != pdata->offset) {
+				state = eTX_FIRE;
+			}
+			break;
+		}
+	}
+	return result;
 }
 
-static void check_heartbeat(void)
+static void check_heartbeat(data_t *pd)
 {
 	ulong_t	now = tline_ms();
 
 	if (tline_out(now, m_client.heartbeat, NRF24_HEARTBEAT_TIMEOUT_MS)) {
 
 	} else 	if (tline_out(now, m_client.heartbeat, NRF24_HEARTBEAT_SEND_MS)) {
-		struct __attribute__ ((packed)) {
-			data_t		hdr;
-			uint8_t	data[sizeof(join_t)];
-		} htb;
-		join_t *pj = (join_t*)htb.hdr.raw;
+		join_t *pj = (join_t*)pd->raw;
 
 		pj->version.major = m_pversion->major;
 		pj->version.minor = m_pversion->minor;
 		pj->hashid = m_client.hashid;
 		pj->data = m_client.pipe;
 		pj->result = NRF24_SUCCESS;
-		send_payload(build_data(CLIENT_PIPE, m_client.net_addr, NRF24_HEARTBEAT, &htb.hdr, sizeof(join_t), NULL));
+		put_ptx_queue(build_data(m_client.pipe, m_client.net_addr, NRF24_HEARTBEAT, pd, sizeof(join_t), NULL));
 		m_client.heartbeat = tline_ms();
 	}
 }
@@ -232,7 +240,6 @@ static int prx_service(void)
 	} data;
 	int	pipe,
 			len;
-	GSList *pentry;
 
 	pipe = nrf24l01_prx_pipe_available();
 	if (pipe!=NRF24L01_NO_PIPE) {
@@ -241,24 +248,6 @@ static int prx_service(void)
 			DUMP_DATA(F("RECV: "), pipe, &data, len);
 			len -= sizeof(data.hdr);
 			switch (data.hdr.msg_type) {
-			case NRF24_GATEWAY_REQ:
-				if (len == sizeof(data.msg.result) && pipe == BROADCAST) {
-					data.msg.result = NRF24_ECONNREFUSED;
-					put_ptx_queue(build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
-				}
-				break;
-
-			case NRF24_JOIN_LOCAL:
-				if (len != sizeof(join_t) || pipe != BROADCAST ||
-					data.msg.join.version.major > m_pversion->major ||
-					data.msg.join.version.minor > m_pversion->minor) {
-					break;
-				}
-				data.msg.join.data = set_new_client(&data, len);
-				data.msg.join.result = (data.msg.join.data != NRF24L01_NO_PIPE) ? NRF24_SUCCESS : NRF24_ECONNREFUSED;
-				put_ptx_queue(build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
-				break;
-
 			case NRF24_UNJOIN_LOCAL:
 				if (len != sizeof(join_t) ||
 					data.msg.join.data != pipe ||
@@ -266,10 +255,10 @@ static int prx_service(void)
 					data.msg.join.version.minor > m_pversion->minor) {
 					break;
 				}
-				pentry = g_slist_find_custom(m_pclients, &data, join_match);
-				if (pentry != NULL) {
-					client_disconnect((client_t*)pentry);
-				}
+//				pentry = g_slist_find_custom(m_pclients, &data, join_match);
+//				if (pentry != NULL) {
+//					client_disconnect((client_t*)pentry);
+//				}
 				break;
 
 			case NRF24_HEARTBEAT:
@@ -279,13 +268,13 @@ static int prx_service(void)
 					data.msg.join.version.minor > m_pversion->minor) {
 					break;
 				}
-				pentry = g_slist_find_custom(m_pclients, &data, join_match);
-				if (pentry != NULL) {
-					((client_t*)pentry)->heartbeat = tline_ms();
-					data.msg.join.result = NRF24_SUCCESS;
-				} else {
-					data.msg.join.result = NRF24_ECONNREFUSED;
-				}
+//				pentry = g_slist_find_custom(m_pclients, &data, join_match);
+//				if (pentry != NULL) {
+//					((client_t*)pentry)->heartbeat = tline_ms();
+//					data.msg.join.result = NRF24_SUCCESS;
+//				} else {
+//					data.msg.join.result = NRF24_ECONNREFUSED;
+//				}
 				put_ptx_queue(build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
 				break;
 
@@ -296,74 +285,26 @@ static int prx_service(void)
 				}
 				/* No break; fall through intentionally */
 			case NRF24_APP:
-				pentry = g_slist_find_custom(m_pclients, &data, join_match);
-				if (pentry != NULL && ((client_t*)pentry)->pipe == pipe) {
-					client_t *pc = (client_t*)pentry;
-					if (data.hdr.msg_type == NRF24_APP_FIRST) {
-						g_free(pc->rxmsg);
-						pc->rxmsg = NULL;
-					}
-					pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
-					if (data.hdr.msg_type == NRF24_APP) {
-						write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
-						g_free(pc->rxmsg);
-						pc->rxmsg = NULL;
-					}
-				}
+//				pentry = g_slist_find_custom(m_pclients, &data, join_match);
+//				if (pentry != NULL && ((client_t*)pentry)->pipe == pipe) {
+//					client_t *pc = (client_t*)pentry;
+//					if (data.hdr.msg_type == NRF24_APP_FIRST) {
+//						g_free(pc->rxmsg);
+//						pc->rxmsg = NULL;
+//					}
+//					pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
+//					if (data.hdr.msg_type == NRF24_APP) {
+//						write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
+//						g_free(pc->rxmsg);
+//						pc->rxmsg = NULL;
+//					}
+//				}
 				break;
 			}
 		}
 	}
 
-	g_slist_foreach(m_pclients, check_heartbeat, NULL);
-
-	if (!list_empty(&m_ptx_list)) {
-		static int send_state = eTX_FIRE;
-		static ulong_t	start = 0,
-									delay = 0;
-		static data_t *pdata = NULL;
-
-		switch (send_state) {
-		case  eTX_FIRE:
-			start = tline_ms();
-			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
-			send_state = eTX_GAP;
-			/* No break; fall through intentionally */
-		case eTX_GAP:
-			if (!tline_out(tline_ms(), start, delay)) {
-				break;
-			}
-			send_state = eTX;
-			/* No break; fall through intentionally */
-		case eTX:
-			G_LOCK(m_ptx_list);
-			pdata = list_first_entry(&m_ptx_list, data_t, node);
-			list_del_init(&pdata->node);
-			G_UNLOCK(m_ptx_list);
-			if (send_payload(pdata) != SUCCESS) {
-				if (--pdata->retry == 0) {
-					//TODO: next step, error issue to the application if sent NRF24_APP message fail
-					TERROR(F("Failed to send message to the pipe#%d\n"), pdata->pipe);
-					g_free(pdata);
-				} else {
-					pdata->offset = pdata->offset_retry;
-					G_LOCK(m_ptx_list);
-					list_move_tail(&pdata->node, &m_ptx_list);
-					G_UNLOCK(m_ptx_list);
-				}
-			} else 	if (pdata->len == pdata->offset) {
-				g_free(pdata);
-			} else {
-				TRACE(F("Message fragment sent to the pipe#%d len=%d\n"), pdata->pipe, pdata->len);
-				G_LOCK(m_ptx_list);
-				list_move_tail(&pdata->node, &m_ptx_list);
-				G_UNLOCK(m_ptx_list);
-			}
-			send_state = eTX_FIRE;
-			break;
-		}
-	}
-
+	check_heartbeat();
 	return ePRX;
 }
 
@@ -408,8 +349,10 @@ static int join_local(void)
 	struct __attribute__ ((packed)) {
 		data_t		hdr;
 		uint8_t	data[sizeof(join_t)];
-	} clirq;
-	join_t *pj = (join_t*)clirq.hdr.raw;
+	} clireq;
+	join_t *pj = (join_t*)clireq.hdr.raw;
+
+	nrf24l01_open_pipe(0, BROADCAST);
 
 	pj->version.major = m_pversion->major;
 	pj->version.minor = m_pversion->minor;
@@ -417,24 +360,23 @@ static int join_local(void)
 	pj->hashid ^= (get_random_value(RAND_MAX, 1, 1) * 65536);
 	pj->data = 0;
 	pj->result = NRF24_SUCCESS;
-	build_data(BROADCAST, ((pj->hashid / 65536) ^ pj->hashid), NRF24_JOIN_LOCAL, &clirq.hdr, sizeof(join_t), NULL);
-	clirq.hdr.retry = get_random_value(CLIRQ_RETRY, 2, CLIRQ_RETRY);
-	nrf24l01_open_pipe(0, NRF24L01_PIPE0_ADDR);
+	build_data(BROADCAST, ((pj->hashid / 65536) ^ pj->hashid), NRF24_JOIN_LOCAL, &clireq.hdr, sizeof(join_t), NULL);
+	clireq.hdr.retry = get_random_value(CLIREQ_RETRY, 2, CLIREQ_RETRY);
 
 	while (state == eCLIR || state == eCLIR_PENDING) {
 		switch (state) {
 		case eCLIR:
 			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
-			TRACE(F("Client joins ch#%d retry=%d delay=%ld\n"), nrf24l01_get_channel(), clirq.hdr.retry, delay);
-			send_payload(&clirq);
-			clirq.hdr.offset = 0;
+			TRACE(F("Client joins ch#%d retry=%d delay=%ld\n"), nrf24l01_get_channel(), clireq.hdr.retry, delay);
+			send_payload(&clireq);
+			clireq.hdr.offset = 0;
 			start = tline_ms();
 			state = eCLIR_PENDING;
 			break;
 
 		case eCLIR_PENDING:
-			state = clireq_read(start, delay, &clirq.hdr);
-			if (state == eCLIR_TIMEOUT && --clirq.hdr.retry != 0) {
+			state = clireq_read(start, delay, &clireq.hdr);
+			if (state == eCLIR_TIMEOUT && --clireq.hdr.retry != 0) {
 				state = eCLIR;
 			}
 			break;
@@ -453,15 +395,15 @@ static int unjoin_local(void)
 	struct __attribute__ ((packed)) {
 		data_t		hdr;
 		uint8_t	data[sizeof(join_t)];
-	} htb;
-	join_t *pj = (join_t*)htb.hdr.raw;
+	} clireq;
+	join_t *pj = (join_t*)clireq.hdr.raw;
 
 	pj->version.major = m_pversion->major;
 	pj->version.minor = m_pversion->minor;
 	pj->hashid = m_client.hashid;
 	pj->data = m_client.pipe;
 	pj->result = NRF24_SUCCESS;
-	return send_payload(build_data(CLIENT_PIPE, m_client.net_addr, NRF24_UNJOIN_LOCAL, &htb.hdr, sizeof(join_t), NULL));
+	return put_ptx_queue(build_data(m_client.pipe, m_client.net_addr, NRF24_UNJOIN_LOCAL, &clireq.hdr, sizeof(join_t), NULL));
 }
 
 /*
@@ -487,10 +429,10 @@ int nrf24l01_client_open(int socket, int channel, version_t *pversion)
 		return ERROR;
 	}
 
-	fprintf(stdout, "Client try to join on channel #%d\n", nrf24l01_get_channel());
 	m_fd = socket;
 	m_pversion = pversion;
 
+	fprintf(stdout, "Client try to join on channel #%d\n", nrf24l01_get_channel());
 	ret = join_local();
 	if (ret != ePRX) {
 		if (ret == eCLIR_TIMEOUT) {
@@ -520,6 +462,8 @@ int nrf24l01_client_close(int socket)
 	}
 
 	m_fd = SOCKET_INVALID;
+	m_pversion = NULL;
+
 	fprintf(stdout, "Client leaves this channel #%d\n", nrf24l01_get_channel());
 	return SUCCESS;
 }

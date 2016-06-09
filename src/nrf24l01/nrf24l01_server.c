@@ -32,8 +32,8 @@
 #define SEND_DELAY_MS	1
 
 // defines constant retry values
-#define GWR_RETRY			NRF24_RETRIES
-#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - NRF24_TIMEOUT_MS) / NRF24_TIMEOUT_MS)
+#define GWREQ_RETRY		NRF24_RETRIES
+#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - SEND_INTERVAL) / SEND_INTERVAL)
 
 #define BROADCAST			NRF24L01_PIPE0_ADDR
 
@@ -540,7 +540,7 @@ static int gwreq(bool reset)
 	if (reset) {
 		ch = nrf24l01_get_channel();
 		ch0 = ch;
-		m_gwreq->retry = m_gwreq->net_addr = get_random_value(GWR_RETRY, 2, GWR_RETRY);
+		m_gwreq->retry = m_gwreq->net_addr = get_random_value(GWREQ_RETRY, 2, GWREQ_RETRY);
 		state = eGWR;
 	}
 
@@ -580,7 +580,7 @@ static int gwreq(bool reset)
 			break;
 		}
 
-		m_gwreq->retry = m_gwreq->net_addr = get_random_value(GWR_RETRY, 2, GWR_RETRY);
+		m_gwreq->retry = m_gwreq->net_addr = get_random_value(GWREQ_RETRY, 2, GWREQ_RETRY);
 		state = eGWR;
 		break;
 	}
