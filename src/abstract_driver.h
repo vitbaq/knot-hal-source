@@ -74,7 +74,6 @@ typedef struct {
 	int (*listen)(int sockfd, int backlog);
 	int (*connect)(int cli_sockfd, const void *addr, size_t len);
 	int (*available)(int sockfd);
-	void (*service)(void);
 	int (*read)(int sockfd, void *buffer, size_t len);
 	int (*write)(int sockfd, const void *buffer, size_t len);
 } abstract_driver_t;

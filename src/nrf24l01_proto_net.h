@@ -25,10 +25,20 @@
 #define NRF24_ECONNREFUSED		-3
 
 // Network retransmiting parameters
-#define NRF24_TIMEOUT_MS								45
+#define NRF24_TIMEOUT_MS								(3 * NRF24L01_ARC)		// 3ms is the ARD maximum of the last pipe, range 1ms <= ARD <= 3ms
 #define NRF24_HEARTBEAT_SEND_MS			1000
 #define NRF24_HEARTBEAT_TIMEOUT_MS		(NRF24_HEARTBEAT_SEND_MS * 2)
 #define NRF24_RETRIES											200
+
+// defines constant time values
+#define SEND_DELAY_MS	1
+#define SEND_INTERVAL	NRF24_TIMEOUT_MS	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
+
+// defines constant retry values
+#define JOINREQ_RETRY	NRF24_RETRIES
+#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - (NRF24_HEARTBEAT_SEND_MS + SEND_INTERVAL)) / SEND_INTERVAL)
+
+#define BROADCAST			NRF24L01_PIPE0_ADDR
 
 // Network messages
 #define NRF24_GATEWAY_REQ	0x00
@@ -38,6 +48,7 @@
 #define NRF24_APP							0x04
 #define NRF24_APP_FIRST			0x05
 #define NRF24_APP_FRAG				0x06
+#define NRF24_APP_LAST				0x07
 
 /**
  * struct hdr_t - net layer message header

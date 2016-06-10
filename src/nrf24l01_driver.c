@@ -12,9 +12,7 @@
 #include "nrf24l01_server.h"
 #include <fcntl.h>
 #endif
-
 #include "nrf24l01_client.h"
-#include "nrf24l01.h"
 
 #include "abstract_driver.h"
 
@@ -82,7 +80,7 @@ static int nrf24_close(int socket)
 	if (m_state == eSERVER) {
 		return nrf24l01_server_close(socket);
 	} else if (m_state == eCLIENT) {
-		//return nrf24l01_client_close(socket);
+		return nrf24l01_client_close(socket);
 	}
 	close(socket);
 	if (socket == m_fd) {
@@ -91,7 +89,7 @@ static int nrf24_close(int socket)
 	}
 #else
 	if (state == eCLIENT) {
-		//return nrf24l01_client_close(socket);
+		return nrf24l01_client_close(socket);
 	}
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
@@ -199,18 +197,6 @@ static int nrf24_available(int socket)
 	return 0;
 }
 
-static void nrf24_service(void)
-{
-	if (m_state == eCLIENT) {
-		//nrf24l01_client_service();
-	}
-#ifndef ARDUINO
-	if (m_state == eSERVER) {
-		//nrf24l01_server_service();
-	}
-#endif
-}
-
 static int nrf24_read(int socket, void *buffer, size_t len)
 {
 	return read(socket, buffer, len);
@@ -252,7 +238,6 @@ abstract_driver_t nrf24l01_driver = {
 	.listen = nrf24_listen,
 	.connect = nrf24_connect,
 	.available = nrf24_available,
-	.service = nrf24_service,
 	.read = nrf24_read,
 	.write = nrf24_write
 };

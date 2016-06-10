@@ -7,8 +7,12 @@
  *
  */
 #ifndef ARDUINO
+#include <stdlib.h>
 #include <errno.h>
 #endif
+
+#include "nrf24l01.h"
+#include "util.h"
 
 #include "nrf24l01_proto_net.h"
 

@@ -6,14 +6,7 @@
 * of the BSD license. See the LICENSE file for details.
 *
 */
-#include <stdlib.h>
-//#include <sys/socket.h>
-//#include <inttypes.h>
-//#include <fcntl.h>
-
 #include "nrf24l01_client.h"
-#include "nrf24l01.h"
-#include "util.h"
 
 //#define TRACE_ALL
 #include "debug.h"
@@ -34,29 +27,15 @@
 #define	RAND_MAX	2147483647L
 #endif
 
-// defines constant time values
-#define SEND_INTERVAL	NRF24_TIMEOUT_MS	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
-#define SEND_DELAY_MS	1
-
-// defines constant retry values
-#define CLIREQ_RETRY		NRF24_RETRIES
-#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - SEND_INTERVAL) / SEND_INTERVAL)
-
-#define BROADCAST			NRF24L01_PIPE0_ADDR
-
 enum {
 	eUNKNOWN,
-
-	eCLIR,
-	eCLIR_PENDING,
-	eCLIR_TIMEOUT,
-	eCLIR_ECONNREFUSED,
-
-	eTX_FIRE,
-	eTX_GAP,
-	eTX,
-
+	eREQUEST,
+	ePENDING,
+	eTIMEOUT,
+	eECONNREFUSED,
 	ePRX,
+	ePTX_FIRE,
+	ePTX_GAP,
 	ePTX
 } ;
 
@@ -86,23 +65,6 @@ static client_t		m_client;
 /*
  * Local functions
  */
-
-// reports the space between the heap and the stack.
-//static uint16_t getFreeSram()
-//{
-//	extern unsigned int __bss_end;
-//	extern unsigned int __heap_start;
-//	extern void *__brkval;
-//	uint8_t newVariable;
-//
-//	// heap is empty, use bss as start memory address
-//	if ((uint16_t)(intptr_t)__brkval == 0) {
-//		return (((uint16_t)(intptr_t)&newVariable) - ((uint16_t)(intptr_t)&__bss_end));
-//	} else {
-//		// use heap end as the start of the memory address
-//		return (((uint16_t)(intptr_t)&newVariable) - ((uint16_t)(intptr_t)__brkval));
-//	}
-//}
 
 static int get_random_value(int interval, int ntime, int min)
 {
@@ -157,6 +119,8 @@ static int send_payload(data_t *pdata)
 			if (len > NRF24_PW_MSG_SIZE) {
 				payload.hdr.msg_type = NRF24_APP_FRAG;
 				len = NRF24_PW_MSG_SIZE;
+			} else {
+				payload.hdr.msg_type = NRF24_APP_LAST;
 			}
 		}
 	} else {
@@ -176,25 +140,25 @@ static int send_payload(data_t *pdata)
 
 static int put_ptx_queue(data_t *pdata)
 {
-	int	state = eTX_FIRE,
+	int	state = ePTX_FIRE,
 			result = SUCCESS;
 	ulong_t	start,
 					delay;
 
-	while (state != eTX) {
+	while (state != ePTX) {
 		switch (state) {
-		case  eTX_FIRE:
+		case  ePTX_FIRE:
 			start = tline_ms();
 			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
-			state = eTX_GAP;
+			state = ePTX_GAP;
 			/* No break; fall through intentionally */
-		case eTX_GAP:
+		case ePTX_GAP:
 			if (!tline_out(tline_ms(), start, delay)) {
 				break;
 			}
-			state = eTX;
+			state = ePTX;
 			/* No break; fall through intentionally */
-		case eTX:
+		case ePTX:
 			result = send_payload(pdata);
 			if (result != SUCCESS) {
 				if (--pdata->retry == 0) {
@@ -202,10 +166,10 @@ static int put_ptx_queue(data_t *pdata)
 					TERROR(F("Failed to send message to the pipe#%d\n"), pdata->pipe);
 				} else {
 					pdata->offset = pdata->offset_retry;
-					state = eTX_FIRE;
+					state = ePTX_FIRE;
 				}
 			} else 	if (pdata->len != pdata->offset) {
-				state = eTX_FIRE;
+				state = ePTX_FIRE;
 			}
 			break;
 		}
@@ -218,7 +182,10 @@ static void check_heartbeat(data_t *pd)
 	ulong_t	now = tline_ms();
 
 	if (tline_out(now, m_client.heartbeat, NRF24_HEARTBEAT_TIMEOUT_MS)) {
-
+		nrf24l01_set_standby();
+		nrf24l01_close_pipe(0);
+		m_fd = SOCKET_INVALID;
+		m_pversion = NULL;
 	} else 	if (tline_out(now, m_client.heartbeat, NRF24_HEARTBEAT_SEND_MS)) {
 		join_t *pj = (join_t*)pd->raw;
 
@@ -284,6 +251,7 @@ static int prx_service(void)
 					break;
 				}
 				/* No break; fall through intentionally */
+			case NRF24_APP_LAST:
 			case NRF24_APP:
 //				pentry = g_slist_find_custom(m_pclients, &data, join_match);
 //				if (pentry != NULL && ((client_t*)pentry)->pipe == pipe) {
@@ -293,7 +261,7 @@ static int prx_service(void)
 //						pc->rxmsg = NULL;
 //					}
 //					pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
-//					if (data.hdr.msg_type == NRF24_APP) {
+//					if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_LAST) {
 //						write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
 //						g_free(pc->rxmsg);
 //						pc->rxmsg = NULL;
@@ -321,29 +289,29 @@ static int clireq_read(ulong_t start, ulong_t timeout, data_t	*preq)
 		if (len == (sizeof(data.hdr)+sizeof(data.msg.join)) && pipe == BROADCAST &&
 			data.hdr.net_addr == preq->net_addr && data.msg.join.hashid == pj->hashid &&
 			data.hdr.msg_type == NRF24_JOIN_LOCAL) {
-			if (data.msg.result == NRF24_SUCCESS) {
-				m_client.pipe = data.msg.join.data;
-				m_client.net_addr = data.hdr.net_addr;
-				m_client.hashid = data.msg.join.hashid;
-				m_client.heartbeat = tline_ms();
-				m_client.rxmsg = NULL;
-				nrf24l01_set_standby();
-				nrf24l01_close_pipe(0);
-				nrf24l01_open_pipe(0, m_client.pipe);
-				nrf24l01_set_prx();
-				return ePRX;
-			} else {
-				return eCLIR_ECONNREFUSED;
+			if (data.msg.result != NRF24_SUCCESS) {
+				return eECONNREFUSED;
 			}
+
+			m_client.pipe = data.msg.join.data;
+			m_client.net_addr = data.hdr.net_addr;
+			m_client.hashid = data.msg.join.hashid;
+			m_client.heartbeat = tline_ms();
+			m_client.rxmsg = NULL;
+			nrf24l01_set_standby();
+			nrf24l01_close_pipe(0);
+			nrf24l01_open_pipe(0, m_client.pipe);
+			nrf24l01_set_prx();
+			return ePRX;
 		}
 	}
 
-	return (tline_out(tline_ms(), start, timeout) ? eCLIR_TIMEOUT : eCLIR_PENDING);
+	return (tline_out(tline_ms(), start, timeout) ? eTIMEOUT : ePENDING);
 }
 
 static int join_local(void)
 {
-	int state = eCLIR;
+	int state = eREQUEST;
 	ulong_t	start = 0,
 					delay = 0;
 	struct __attribute__ ((packed)) {
@@ -361,23 +329,23 @@ static int join_local(void)
 	pj->data = 0;
 	pj->result = NRF24_SUCCESS;
 	build_data(BROADCAST, ((pj->hashid / 65536) ^ pj->hashid), NRF24_JOIN_LOCAL, &clireq.hdr, sizeof(join_t), NULL);
-	clireq.hdr.retry = get_random_value(CLIREQ_RETRY, 2, CLIREQ_RETRY);
+	clireq.hdr.retry = get_random_value(JOINREQ_RETRY, 2, JOINREQ_RETRY);
 
-	while (state == eCLIR || state == eCLIR_PENDING) {
+	while (state == eREQUEST || state == ePENDING) {
 		switch (state) {
-		case eCLIR:
+		case eREQUEST:
 			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
 			TRACE(F("Client joins ch#%d retry=%d delay=%ld\n"), nrf24l01_get_channel(), clireq.hdr.retry, delay);
 			send_payload(&clireq);
 			clireq.hdr.offset = 0;
 			start = tline_ms();
-			state = eCLIR_PENDING;
+			state = ePENDING;
 			break;
 
-		case eCLIR_PENDING:
+		case ePENDING:
 			state = clireq_read(start, delay, &clireq.hdr);
-			if (state == eCLIR_TIMEOUT && --clireq.hdr.retry != 0) {
-				state = eCLIR;
+			if (state == eTIMEOUT && --clireq.hdr.retry != 0) {
+				state = eREQUEST;
 			}
 			break;
 		}
@@ -432,20 +400,20 @@ int nrf24l01_client_open(int socket, int channel, version_t *pversion)
 	m_fd = socket;
 	m_pversion = pversion;
 
-	fprintf(stdout, "Client try to join on channel #%d\n", nrf24l01_get_channel());
+	fprintf(stdout, F("Client try to join on channel #%d\n"), nrf24l01_get_channel());
 	ret = join_local();
 	if (ret != ePRX) {
-		if (ret == eCLIR_TIMEOUT) {
-			fprintf(stdout, "Client not joined on channel #%d\n", nrf24l01_get_channel());
+		if (ret == eTIMEOUT) {
+			fprintf(stdout, F("Client not joined on channel #%d\n"), nrf24l01_get_channel());
 			errno = ETIMEDOUT;
 		} else {
-			fprintf(stdout, "Client is refused the channel #%d\n", nrf24l01_get_channel());
+			fprintf(stdout, F("Client is refused the channel #%d\n"), nrf24l01_get_channel());
 			errno = ECONNREFUSED;
 		}
 		return ERROR;
 	}
 
-	fprintf(stdout, "Client joined on channel #%d\n", nrf24l01_get_channel());
+	fprintf(stdout, F("Client joined on channel #%d\n"), nrf24l01_get_channel());
 	return SUCCESS;
 }
 
@@ -461,9 +429,11 @@ int nrf24l01_client_close(int socket)
 		return ERROR;
 	}
 
+	nrf24l01_set_standby();
+	nrf24l01_close_pipe(0);
 	m_fd = SOCKET_INVALID;
 	m_pversion = NULL;
 
-	fprintf(stdout, "Client leaves this channel #%d\n", nrf24l01_get_channel());
+	fprintf(stdout, F("Client leaves this channel #%d\n"), nrf24l01_get_channel());
 	return SUCCESS;
 }

@@ -6,9 +6,17 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-#ifndef ARDUINO
+#include <stdlib.h>
+#include <sys/socket.h>
+#include <inttypes.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <sys/un.h>
+#include <glib.h>
+
+#include "nrf24l01.h"
+#include "util.h"
+#include "list.h"
 
 #include "nrf24l01_proto_net.h"
 
@@ -29,7 +37,5 @@ int nrf24l01_server_close(int socket);
 #ifdef __cplusplus
 } // extern "C"
 #endif
-
-#endif // #ifndef ARDUINO
 
 #endif // __NRF24L01_SERVER_H__

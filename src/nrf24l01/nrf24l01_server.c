@@ -8,16 +8,7 @@
 */
 #ifndef ARDUINO
 
-#include <stdlib.h>
-#include <glib.h>
-#include <sys/socket.h>
-#include <inttypes.h>
-#include <fcntl.h>
-
 #include "nrf24l01_server.h"
-#include "nrf24l01.h"
-#include "util.h"
-#include "list.h"
 
 //#define TRACE_ALL
 #include "debug.h"
@@ -27,36 +18,21 @@
 #define DUMP_DATA
 #endif
 
-// defines constant time values
-#define SEND_INTERVAL	NRF24_TIMEOUT_MS	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
-#define SEND_DELAY_MS	1
-
-// defines constant retry values
-#define GWREQ_RETRY		NRF24_RETRIES
-#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - SEND_INTERVAL) / SEND_INTERVAL)
-
-#define BROADCAST			NRF24L01_PIPE0_ADDR
-
 #define NEXT_CH	2
 
 enum {
 	eUNKNOWN,
-	eCLOSE,
 	eOPEN,
-
+	eCLOSE,
+	eREQUEST,
+	ePENDING,
+	eTIMEOUT,
+	eECONNREFUSED,
+	eCHANNEL_BUSY,
 	eCLOSE_PENDING,
-
-	eGWR,
-	eGWR_PENDING,
-	eGWR_TIMEOUT,
-	eGWR_ECONNREFUSED,
-	eGWR_CHANNEL_BUSY,
-
-	eTX_FIRE,
-	eTX_GAP,
-	eTX,
-
 	ePRX,
+	ePTX_FIRE,
+	ePTX_GAP,
 	ePTX
 } ;
 
@@ -226,6 +202,8 @@ static int send_payload(data_t *pdata)
 			if (len > NRF24_PW_MSG_SIZE) {
 				payload.hdr.msg_type = NRF24_APP_FRAG;
 				len = NRF24_PW_MSG_SIZE;
+			} else {
+				payload.hdr.msg_type = NRF24_APP_LAST;
 			}
 		}
 	} else {
@@ -431,6 +409,7 @@ static int prx_service(void)
 					break;
 				}
 				/* No break; fall through intentionally */
+			case NRF24_APP_LAST:
 			case NRF24_APP:
 				pentry = g_slist_find_custom(m_pclients, &data, join_match);
 				if (pentry != NULL && ((client_t*)pentry)->pipe == pipe) {
@@ -440,7 +419,7 @@ static int prx_service(void)
 						pc->rxmsg = NULL;
 					}
 					pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
-					if (data.hdr.msg_type == NRF24_APP) {
+					if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_LAST) {
 						write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
 						g_free(pc->rxmsg);
 						pc->rxmsg = NULL;
@@ -454,24 +433,24 @@ static int prx_service(void)
 	g_slist_foreach(m_pclients, check_heartbeat, NULL);
 
 	if (!list_empty(&m_ptx_list)) {
-		static int send_state = eTX_FIRE;
+		static int send_state = ePTX_FIRE;
 		static ulong_t	start = 0,
 									delay = 0;
 		static data_t *pdata = NULL;
 
 		switch (send_state) {
-		case  eTX_FIRE:
+		case  ePTX_FIRE:
 			start = tline_ms();
 			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
-			send_state = eTX_GAP;
+			send_state = ePTX_GAP;
 			/* No break; fall through intentionally */
-		case eTX_GAP:
+		case ePTX_GAP:
 			if (!tline_out(tline_ms(), start, delay)) {
 				break;
 			}
-			send_state = eTX;
+			send_state = ePTX;
 			/* No break; fall through intentionally */
-		case eTX:
+		case ePTX:
 			G_LOCK(m_ptx_list);
 			pdata = list_first_entry(&m_ptx_list, data_t, node);
 			list_del_init(&pdata->node);
@@ -495,7 +474,7 @@ static int prx_service(void)
 				list_move_tail(&pdata->node, &m_ptx_list);
 				G_UNLOCK(m_ptx_list);
 			}
-			send_state = eTX_FIRE;
+			send_state = ePTX_FIRE;
 			break;
 		}
 	}
@@ -521,54 +500,54 @@ static int gwreq_read(ulong_t start, ulong_t timeout)
 		if (len == (sizeof(data.hdr)+sizeof(data.msg.result)) && pipe == BROADCAST &&
 			data.hdr.msg_type == NRF24_GATEWAY_REQ &&
 			data.msg.result == NRF24_ECONNREFUSED) {
-			return eGWR_ECONNREFUSED;
+			return eECONNREFUSED;
 		}
 	}
 
-	return (tline_out(tline_ms(), start, timeout) ? eGWR_TIMEOUT : eGWR_PENDING);
+	return (tline_out(tline_ms(), start, timeout) ? eTIMEOUT : ePENDING);
 }
 
 static int gwreq(bool reset)
 {
-	static int	state = eGWR,
+	static int	state = eREQUEST,
 					 	ch = CH_MIN,
 					 	ch0 = CH_MIN;
 	static ulong_t	start = 0,
 								delay = 0;
-	int ret = eGWR;
+	int ret = eREQUEST;
 
 	if (reset) {
 		ch = nrf24l01_get_channel();
 		ch0 = ch;
-		m_gwreq->retry = m_gwreq->net_addr = get_random_value(GWREQ_RETRY, 2, GWREQ_RETRY);
-		state = eGWR;
+		m_gwreq->retry = m_gwreq->net_addr = get_random_value(JOINREQ_RETRY, 2, JOINREQ_RETRY);
+		state = eREQUEST;
 	}
 
 	switch(state) {
-	case eGWR:
+	case eREQUEST:
 		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
 		TRACE("Server joins ch#%d retry=%d/%d delay=%ld\n", ch, m_gwreq->net_addr, m_gwreq->retry, delay);
 		send_payload(m_gwreq);
 		m_gwreq->offset = 0;
 		start = tline_ms();
-		state = eGWR_PENDING;
+		state = ePENDING;
 		break;
 
-	case eGWR_PENDING:
+	case ePENDING:
 		state = gwreq_read(start, delay);
 		break;
 
-	case eGWR_TIMEOUT:
+	case eTIMEOUT:
 		if (--m_gwreq->net_addr == 0) {
 			fprintf(stdout, "Server join on channel #%d\n", nrf24l01_get_channel());
 			ret = ePRX;
 			break;
 		}
 
-		state = eGWR;
+		state = eREQUEST;
 		break;
 
-	case eGWR_ECONNREFUSED:
+	case eECONNREFUSED:
 		nrf24l01_set_standby();
 		ch += NEXT_CH;
 		if (nrf24l01_set_channel(ch) == ERROR) {
@@ -576,12 +555,12 @@ static int gwreq(bool reset)
 			nrf24l01_set_channel(ch);
 		}
 		if(ch == ch0) {
-			ret = eGWR_CHANNEL_BUSY;
+			ret = eCHANNEL_BUSY;
 			break;
 		}
 
-		m_gwreq->retry = m_gwreq->net_addr = get_random_value(GWREQ_RETRY, 2, GWREQ_RETRY);
-		state = eGWR;
+		m_gwreq->retry = m_gwreq->net_addr = get_random_value(JOINREQ_RETRY, 2, JOINREQ_RETRY);
+		state = eREQUEST;
 		break;
 	}
 	return ret;
@@ -630,11 +609,12 @@ static gboolean server_service(gpointer dummy)
 		m_state = gwreq(true);
 		break;
 
-	case eGWR:
+	case eREQUEST:
 		m_state = gwreq(false);
 		break;
 
-	case eGWR_CHANNEL_BUSY:
+	case eCHANNEL_BUSY:
+		close(m_fd);
 		m_state = eCLOSE_PENDING;
 		break;
 
@@ -698,7 +678,7 @@ int nrf24l01_server_open(int socket, int channel, version_t *pversion)
 
 int nrf24l01_server_close(int socket)
 {
-	if (socket == SOCKET_INVALID) {
+	if (m_fd == SOCKET_INVALID || m_fd != socket) {
 		errno = EBADF;
 		return ERROR;
 	}
