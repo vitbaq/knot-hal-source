@@ -17,6 +17,9 @@
 #include "abstract_driver.h"
 
 #define NRF24L01_DRIVER_NAME		"nRF24L01 driver"
+// protocol version
+#define NRF24_VERSION_MAJOR	1
+#define NRF24_VERSION_MINOR	0
 
 #define POLLTIME_MS			10
 
@@ -27,10 +30,6 @@ enum {
 	eCLIENT
 } ;
 
-static version_t version =  { NRF24_VERSION_MAJOR,
-									   	   	   	   NRF24_VERSION_MINOR,
-									   	   	   	   NRF24_APP_PACKET_SIZE_MAX };
-
 #ifdef ARDUINO
 int errno = SUCCESS;
 #endif
@@ -38,39 +37,45 @@ int errno = SUCCESS;
 static int	m_state = eINVALID,
 					m_fd = SOCKET_INVALID;
 
+static version_t	m_version =  {	major: NRF24_VERSION_MAJOR,
+															minor: NRF24_VERSION_MINOR,
+															packet_size: 0
+};
+
 /*
  * HAL functions
  */
 static int nrf24_socket(void)
 {
-#ifndef ARDUINO
-	if (m_fd != SOCKET_INVALID && (fcntl(m_fd, F_GETFL) < 0 && errno == EBADF)) {
-		m_fd = SOCKET_INVALID;
-		m_state =  eUNKNOWN;
-	}
-
-	if (m_state == eINVALID || m_fd != SOCKET_INVALID) {
+	if (m_state == eINVALID) {
 		errno = EACCES;
 		return ERROR;
 	}
 
+	if (m_fd != SOCKET_INVALID) {
+		errno = EMFILE;
+		return ERROR;
+	}
+
+#ifndef ARDUINO
 	m_fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (m_fd < 0) {
+		m_fd = SOCKET_INVALID;
 		return ERROR;
 	}
 #else
-	if (m_state == eINVALID || m_fd != SOCKET_INVALID) {
-		errno = EACCES;
-		return ERROR;
-	}
-
-	m_fd = 0;
+	m_fd = STDERR_FILENO+1;
 #endif
 	return m_fd;
 }
 
 static int nrf24_close(int socket)
 {
+	if (m_state == eINVALID) {
+		errno = EACCES;
+		return ERROR;
+	}
+
 	if (socket == SOCKET_INVALID) {
 		errno = EBADF;
 		return ERROR;
@@ -78,24 +83,20 @@ static int nrf24_close(int socket)
 
 #ifndef ARDUINO
 	if (m_state == eSERVER) {
-		return nrf24l01_server_close(socket);
+		nrf24l01_server_close(socket);
 	} else if (m_state == eCLIENT) {
-		return nrf24l01_client_close(socket);
+		nrf24l01_client_close(socket);
 	}
 	close(socket);
-	if (socket == m_fd) {
-		m_fd = SOCKET_INVALID;
-		m_state =  eUNKNOWN;
-	}
 #else
 	if (state == eCLIENT) {
-		return nrf24l01_client_close(socket);
+		nrf24l01_client_close(socket);
 	}
+#endif
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
 		m_state =  eUNKNOWN;
 	}
-#endif
 	return SUCCESS;
 }
 
@@ -105,20 +106,25 @@ static int nrf24_listen(int socket, int channel)
 	int result;
 	struct sockaddr_un addr;
 
+	if (m_state != eUNKNOWN) {
+		errno = EACCES;
+		return ERROR;
+	}
+
 	if (m_fd == SOCKET_INVALID || socket != m_fd) {
 		errno = EBADF;
 		return ERROR;
 	}
 
-	if (m_state != eUNKNOWN) {
-		errno = EACCES;
+	if (channel < CH_MIN || channel > CH_MAX_1MBPS) {
+		errno = EINVAL;
 		return ERROR;
 	}
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	/* Abstract namespace: first character must be null */
-	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE);
+	strncpy(addr.sun_path+1, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE);
 	if (bind(m_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
 		return ERROR;
 	}
@@ -127,10 +133,7 @@ static int nrf24_listen(int socket, int channel)
 		return ERROR;
 	}
 
-	if(channel < CH_MIN)
-		channel = NRF24L01_CHANNEL_DEFAULT;
-
-	result = nrf24l01_server_open(socket, channel, &version);
+	result = nrf24l01_server_open(socket, channel, &m_version);
 	if (result == SUCCESS) {
 		m_state = eSERVER;
 	}
@@ -145,74 +148,72 @@ static int nrf24_connect(int socket, const void *addr, size_t len)
 {
 	int result;
 
-	if (m_fd == SOCKET_INVALID || socket != m_fd) {
-		errno = EBADF;
-		return ERROR;
-	}
-
 	if (m_state != eUNKNOWN) {
 		errno = EACCES;
 		return ERROR;
 	}
 
-	if (len != sizeof(int) || *((int*)addr) < CH_MIN) {
+	if (m_fd == SOCKET_INVALID || socket != m_fd) {
+		errno = EBADF;
+		return ERROR;
+	}
+
+	if (len != sizeof(int) || *((int*)addr) < CH_MIN || *((int*)addr) > CH_MAX_1MBPS) {
 		errno = EINVAL;
 		return ERROR;
 	}
 
-	result = nrf24l01_client_open(socket, *((int*)addr), &version);
+	result = nrf24l01_client_open(socket, *((int*)addr), &m_version);
 	if (result == SUCCESS) {
 		m_state = eCLIENT;
 	}
 	return  result;
 }
 
-static int nrf24_available(int socket)
+static int nrf24_read(int socket, void *buffer, size_t len)
 {
-	if (socket == SOCKET_INVALID) {
-		errno = EBADF;
-		return ERROR;
-	}
-	if (m_state == eUNKNOWN) {
+	if (m_state <= eUNKNOWN) {
 		errno = EACCES;
 		return ERROR;
 	}
 
-	if (m_state == eCLIENT) {
-		//return nrf24l01_client_available(socket);
-	}
-#ifndef ARDUINO
 	if (m_state == eSERVER) {
-		struct pollfd fd_poll;
-
-		fd_poll.fd = socket;
-		fd_poll.events = POLLIN | POLLPRI | POLLRDHUP;
-		fd_poll.revents = 0;
-		//returns: 1 for socket available,
-		//				 0 for no available,
-		//				 or -1 for errors.
-		return poll(&fd_poll, 1, POLLTIME_MS);
+		return read(socket, buffer, len);
 	}
-#endif
-	return 0;
-}
 
-static int nrf24_read(int socket, void *buffer, size_t len)
-{
-	return read(socket, buffer, len);
+	return nrf24l01_client_read(socket, buffer, len);
 }
 
 static int nrf24_write(int socket, const void *buffer, size_t len)
 {
-	return write(socket, buffer, len);
+	if (m_state <= eUNKNOWN) {
+		errno = EACCES;
+		return ERROR;
+	}
+
+	if (m_state == eSERVER) {
+		return write(socket, buffer, len);
+	}
+
+	return nrf24l01_client_write(socket, buffer, len);
 }
 
-static int nrf24_probe(void)
+static int nrf24_probe(size_t packet_size)
 {
-	if(m_state > eINVALID)	{
+	if(m_state > eINVALID) {
 		return SUCCESS;
 	}
+
+	if (packet_size == 0 || packet_size > UINT16_MAX) {
+		errno = EINVAL;
+		return ERROR;
+	}
+
+	m_version.packet_size = packet_size;
 	m_state = (nrf24l01_init() == SUCCESS) ? eUNKNOWN : eINVALID;
+	if(m_state == eINVALID) {
+		errno = EIO;
+	}
 	return (m_state == eUNKNOWN ? SUCCESS : ERROR);
 }
 
@@ -237,7 +238,6 @@ abstract_driver_t nrf24l01_driver = {
 	.close = nrf24_close,
 	.listen = nrf24_listen,
 	.connect = nrf24_connect,
-	.available = nrf24_available,
 	.read = nrf24_read,
 	.write = nrf24_write
 };

@@ -25,6 +25,9 @@ extern "C"{
 
 int nrf24l01_client_open(int socket, int channel, version_t *pversion);
 int nrf24l01_client_close(int socket);
+int nrf24_client_read(int socket, void *buffer, size_t len);
+int nrf24_client_write(int socket, const void *buffer, size_t len);
+int nrf24_client_available(int socket);
 
 #ifdef __cplusplus
 } // extern "C"

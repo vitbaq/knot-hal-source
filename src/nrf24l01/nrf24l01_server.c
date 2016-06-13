@@ -51,7 +51,8 @@ typedef struct {
 typedef struct  {
 	int				fdsock,
 						pipe;
-	uint16_t		net_addr;
+	uint16_t		net_addr,
+						packet_size;
 	uint32_t		hashid;
 	ulong_t		heartbeat;
 	data_t			*rxmsg;
@@ -238,13 +239,13 @@ static gboolean client_watch(GIOChannel *io, GIOCondition cond, gpointer user_da
 		return FALSE;
 	}
 
-	pmsg = g_new(byte_t, m_pversion->packet_size);
+	pmsg = g_new(byte_t, pc->packet_size);
 	if (pmsg == NULL) {
 		TERROR("read alloc error: %s\n", strerror(errno));
 		return FALSE;
 	}
 
-	nbytes = read(pc->fdsock, pmsg, m_pversion->packet_size);
+	nbytes = read(pc->fdsock, pmsg, pc->packet_size);
 	if (nbytes < 0) {
 		TERROR("read() error - %s(%d)\n", strerror(errno), errno);
 		g_free(pmsg);
@@ -309,6 +310,7 @@ static int set_new_client(payload_t *ppl, int len)
 	pc->fdsock = sock;
 	pc->pipe = pipe;
 	pc->net_addr = ppl->hdr.net_addr;
+	pc->packet_size = ppl->msg.join.version.packet_size;
 	pc->hashid = ppl->msg.join.hashid;
 	pc->heartbeat = tline_ms();
 	set_pipe(pipe, true);
@@ -365,7 +367,8 @@ static int prx_service(void)
 			case NRF24_JOIN_LOCAL:
 				if (len != sizeof(join_t) || pipe != BROADCAST ||
 					data.msg.join.version.major > m_pversion->major ||
-					data.msg.join.version.minor > m_pversion->minor) {
+					data.msg.join.version.minor > m_pversion->minor ||
+					data.msg.join.version.packet_size > m_pversion->packet_size) {
 					break;
 				}
 				data.msg.join.data = set_new_client(&data, len);
@@ -377,7 +380,8 @@ static int prx_service(void)
 				if (len != sizeof(join_t) ||
 					data.msg.join.data != pipe ||
 					data.msg.join.version.major > m_pversion->major ||
-					data.msg.join.version.minor > m_pversion->minor) {
+					data.msg.join.version.minor > m_pversion->minor ||
+					data.msg.join.version.packet_size > m_pversion->packet_size) {
 					break;
 				}
 				pentry = g_slist_find_custom(m_pclients, &data, join_match);
@@ -390,7 +394,8 @@ static int prx_service(void)
 				if (len != sizeof(join_t) ||
 					data.msg.join.data != pipe ||
 					data.msg.join.version.major > m_pversion->major ||
-					data.msg.join.version.minor > m_pversion->minor) {
+					data.msg.join.version.minor > m_pversion->minor ||
+					data.msg.join.version.packet_size > m_pversion->packet_size) {
 					break;
 				}
 				pentry = g_slist_find_custom(m_pclients, &data, join_match);
@@ -414,15 +419,21 @@ static int prx_service(void)
 				pentry = g_slist_find_custom(m_pclients, &data, join_match);
 				if (pentry != NULL && ((client_t*)pentry)->pipe == pipe) {
 					client_t *pc = (client_t*)pentry;
-					if (data.hdr.msg_type == NRF24_APP_FIRST) {
+					int size;
+					if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_FIRST) {
 						g_free(pc->rxmsg);
 						pc->rxmsg = NULL;
+						size = len;
+					} else {
+						size = pc->rxmsg->len + len;
 					}
-					pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
-					if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_LAST) {
-						write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
-						g_free(pc->rxmsg);
-						pc->rxmsg = NULL;
+					if (size <= pc->packet_size && size <= m_pversion->packet_size) {
+						pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
+						if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_LAST) {
+							write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
+							g_free(pc->rxmsg);
+							pc->rxmsg = NULL;
+						}
 					}
 				}
 				break;
@@ -555,6 +566,7 @@ static int gwreq(bool reset)
 			nrf24l01_set_channel(ch);
 		}
 		if(ch == ch0) {
+			fprintf(stdout, "Server didn't find channel free\n");
 			ret = eCHANNEL_BUSY;
 			break;
 		}

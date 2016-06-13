@@ -48,6 +48,11 @@ extern "C"{
 #define	EINPROGRESS		115	/* Operation now in progress */
 
 extern int errno;
+
+/* Standard file descriptors.  */
+#define	STDIN_FILENO	0	/* Standard input.  */
+#define	STDOUT_FILENO	1	/* Standard output.  */
+#define	STDERR_FILENO	2	/* Standard error output.  */
 #endif
 
  /**
@@ -66,7 +71,7 @@ extern int errno;
 
 typedef struct {
 	const char *name;
-	int (*probe)(void);
+	int (*probe)(size_t packet_size);
 	void (*remove)(void);
 
 	int (*socket)(void);

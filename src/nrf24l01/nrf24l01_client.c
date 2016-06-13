@@ -39,7 +39,7 @@ enum {
 	ePTX
 } ;
 
-typedef struct {
+typedef struct __attribute__ ((packed)) {
 	int16_t	len,
 					offset,
 					retry,
@@ -50,7 +50,7 @@ typedef struct {
 					raw[];
 } data_t;
 
-typedef struct  {
+typedef struct __attribute__ ((packed)) {
 	uint16_t		net_addr;
 	uint32_t		hashid;
 	ulong_t		heartbeat;
@@ -186,11 +186,13 @@ static void check_heartbeat(data_t *pd)
 		nrf24l01_close_pipe(0);
 		m_fd = SOCKET_INVALID;
 		m_pversion = NULL;
+		m_client.pipe = BROADCAST;
 	} else 	if (tline_out(now, m_client.heartbeat, NRF24_HEARTBEAT_SEND_MS)) {
 		join_t *pj = (join_t*)pd->raw;
 
 		pj->version.major = m_pversion->major;
 		pj->version.minor = m_pversion->minor;
+		pj->version.packet_size = m_pversion->packet_size;
 		pj->hashid = m_client.hashid;
 		pj->data = m_client.pipe;
 		pj->result = NRF24_SUCCESS;
@@ -199,12 +201,8 @@ static void check_heartbeat(data_t *pd)
 	}
 }
 
-static int prx_service(void)
+static void prx_service(void)
 {
-	struct __attribute__ ((packed)) {
-		data_t		hdr;
-		payload_t payload;
-	} data;
 	int	pipe,
 			len;
 
@@ -215,24 +213,12 @@ static int prx_service(void)
 			DUMP_DATA(F("RECV: "), pipe, &data, len);
 			len -= sizeof(data.hdr);
 			switch (data.hdr.msg_type) {
-			case NRF24_UNJOIN_LOCAL:
-				if (len != sizeof(join_t) ||
-					data.msg.join.data != pipe ||
-					data.msg.join.version.major > m_pversion->major ||
-					data.msg.join.version.minor > m_pversion->minor) {
-					break;
-				}
-//				pentry = g_slist_find_custom(m_pclients, &data, join_match);
-//				if (pentry != NULL) {
-//					client_disconnect((client_t*)pentry);
-//				}
-				break;
-
 			case NRF24_HEARTBEAT:
 				if (len != sizeof(join_t) ||
 					data.msg.join.data != pipe ||
-					data.msg.join.version.major > m_pversion->major ||
-					data.msg.join.version.minor > m_pversion->minor) {
+					data.msg.join.version.major != m_pversion->major ||
+					data.msg.join.version.minor != m_pversion->minor ||
+					data.msg.join.version.packet_size != m_pversion->packet_size) {
 					break;
 				}
 //				pentry = g_slist_find_custom(m_pclients, &data, join_match);
@@ -273,7 +259,6 @@ static int prx_service(void)
 	}
 
 	check_heartbeat();
-	return ePRX;
 }
 
 static int clireq_read(ulong_t start, ulong_t timeout, data_t	*preq)
@@ -297,7 +282,6 @@ static int clireq_read(ulong_t start, ulong_t timeout, data_t	*preq)
 			m_client.net_addr = data.hdr.net_addr;
 			m_client.hashid = data.msg.join.hashid;
 			m_client.heartbeat = tline_ms();
-			m_client.rxmsg = NULL;
 			nrf24l01_set_standby();
 			nrf24l01_close_pipe(0);
 			nrf24l01_open_pipe(0, m_client.pipe);
@@ -324,6 +308,7 @@ static int join_local(void)
 
 	pj->version.major = m_pversion->major;
 	pj->version.minor = m_pversion->minor;
+	pj->version.packet_size = m_pversion->packet_size;
 	pj->hashid = get_random_value(RAND_MAX, 1, 1);
 	pj->hashid ^= (get_random_value(RAND_MAX, 1, 1) * 65536);
 	pj->data = 0;
@@ -368,6 +353,7 @@ static int unjoin_local(void)
 
 	pj->version.major = m_pversion->major;
 	pj->version.minor = m_pversion->minor;
+	pj->version.packet_size = m_pversion->packet_size;
 	pj->hashid = m_client.hashid;
 	pj->data = m_client.pipe;
 	pj->result = NRF24_SUCCESS;
@@ -397,6 +383,8 @@ int nrf24l01_client_open(int socket, int channel, version_t *pversion)
 		return ERROR;
 	}
 
+	memset(&m_client, 0, sizeof(m_client));
+	m_client.pipe = BROADCAST;
 	m_fd = socket;
 	m_pversion = pversion;
 
@@ -424,16 +412,44 @@ int nrf24l01_client_close(int socket)
 		return ERROR;
 	}
 
-	if (unjoin_local() != SUCCESS) {
-		errno = EAGAIN;
-		return ERROR;
-	}
+	if (m_client.net_addr != 0) {
+		if (unjoin_local() != SUCCESS) {
+			errno = EAGAIN;
+			return ERROR;
+		}
 
-	nrf24l01_set_standby();
-	nrf24l01_close_pipe(0);
+		nrf24l01_set_standby();
+		nrf24l01_close_pipe(0);
+		memset(&m_client, 0, sizeof(m_client));
+		m_client.pipe = BROADCAST;
+	}
 	m_fd = SOCKET_INVALID;
 	m_pversion = NULL;
 
 	fprintf(stdout, F("Client leaves this channel #%d\n"), nrf24l01_get_channel());
 	return SUCCESS;
+}
+
+int nrf24_client_read(int socket, void *buffer, size_t len)
+{
+	static data_t data;
+
+	if (m_fd == SOCKET_INVALID || m_fd != socket) {
+		errno = EBADF;
+		return ERROR;
+	}
+
+	if (m_client.rxmsg == NULL) {
+		return 0;
+	}
+}
+
+int nrf24_client_write(int socket, const void *buffer, size_t len)
+{
+	if (m_fd == SOCKET_INVALID || m_fd != socket) {
+		errno = EBADF;
+		return ERROR;
+	}
+
+	return 0;
 }

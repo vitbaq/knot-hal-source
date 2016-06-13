@@ -34,6 +34,9 @@
 
 #include "abstract_driver.h"
 
+// application packet size maximum
+#define PACKET_SIZE_MAX		128
+
 /*
  * Device session storing the connected
  * device context: 'drivers' and file descriptors
@@ -148,7 +151,7 @@ static int start_server(void)
 	GIOChannel *sock_io;
 	int sock;
 
-	nrf24l01_driver.probe();
+	nrf24l01_driver.probe(PACKET_SIZE_MAX);
 
 	sock = nrf24l01_driver.socket();
 	if (sock == ERROR) {
