@@ -4,7 +4,7 @@ lib_LIBRARIES = libnrf24l01_driver.a
 lib_HEADER = abstract_driver.h
 lib_ARDUINO = nrf24l01_driver.c nrf24l01_proto_net.h \
 							  util.c util.h \
-							  atypes.h printf_serial.h \
+							  atypes.h printf_serial.h debug.h \
 							  wd/sleep_wdt.c wd/sleep_wdt.h
 
 libnrf24l01_driver_a_SOURCES = nrf24l01_driver.c

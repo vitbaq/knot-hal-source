@@ -23,11 +23,10 @@
 extern "C"{
 #endif
 
-int nrf24l01_client_open(int socket, int channel, version_t *pversion);
-int nrf24l01_client_close(int socket);
-int nrf24_client_read(int socket, void *buffer, size_t len);
-int nrf24_client_write(int socket, const void *buffer, size_t len);
-int nrf24_client_available(int socket);
+int_t nrf24l01_client_open(int_t socket, byte_t channel, version_t *pversion);
+int_t nrf24l01_client_close(int_t socket);
+int_t nrf24l01_client_read(int_t socket, byte_t *buffer, len_t len);
+int_t nrf24l01_client_write(int_t socket, const byte_t *buffer, len_t len);
 
 #ifdef __cplusplus
 } // extern "C"

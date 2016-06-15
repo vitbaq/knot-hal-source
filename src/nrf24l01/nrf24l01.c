@@ -566,15 +566,12 @@ result_t nrf24l01_set_ptx(byte_t pipe_addr)
 
 result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack)
 {
-	static uint8_t raw[NRF24L01_PAYLOAD_SIZE];
-
 	if (unlikely(m_mode != TX_MODE || pdata == NULL ||
 		 len == 0 || len > NRF24L01_PAYLOAD_SIZE)) {
 		return ERROR;
 	}
 
-	memcpy(raw, pdata, len);
-	return command_data(!ack ? W_TX_PAYLOAD_NOACK : W_TX_PAYLOAD, raw, len);
+	return command_data(!ack ? W_TX_PAYLOAD_NOACK : W_TX_PAYLOAD, pdata, len);
 }
 
 result_t nrf24l01_ptx_wait_datasent(void)

@@ -9,6 +9,9 @@
 #include "abstract_driver.h"
 #include "src/nrf24l01/nrf24l01.h"
 
+// application packet size maximum
+#define PACKET_SIZE_MAX		128
+
 using namespace std;
 
 static gint	m_event_watch,
@@ -110,7 +113,7 @@ int main(void)
 	else
 		printf("Find pipe(123) not found\n");
 
-	nrf24l01_driver.probe();
+	nrf24l01_driver.probe(PACKET_SIZE_MAX);
 
 	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_command(NOP));
 	printf("RX: EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));
@@ -170,7 +173,7 @@ int main(void)
 	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_AA));
 
 	nrf24l01_driver.remove();
-	nrf24l01_driver.probe();
+	nrf24l01_driver.probe(PACKET_SIZE_MAX);
 
 	printf("[%d]RX: register=0x%02x status=%#02x\n", ++count, nrf24l01_inr(CONFIG), nrf24l01_command(NOP));
 	printf("RX: EN_RXADDR=0x%02x EN_AA=%#02x\n", nrf24l01_inr(EN_RXADDR), nrf24l01_inr(EN_RXADDR));

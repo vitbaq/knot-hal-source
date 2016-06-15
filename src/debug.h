@@ -56,4 +56,36 @@
 #define TERROR(...) (void)0
 #endif
 
+#ifdef TRACE_ALL
+/**
+ * \brief Print buffer in formated HEX values
+ * */
+static inline void dump_data(const char *str, int port, void *pdata, int len)
+{
+    unsigned char *pd = pdata;
+    int i, off, col, n;
+    char buff[96];
+
+    for (off = n = 0; off < len; off += 16) {
+    	if (port != -1) {
+    		n = sprintf(buff, "%s[%d][%04d]", str, port, off);
+    	} else {
+    		n = sprintf(buff, "%s[%04d]", str, off);
+    	}
+        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
+            n += sprintf(buff + n, " %02lX", (ulong_t)pd[i]);
+        // if (col != 0 && off != 0)
+        for (; col != 0; --col)
+            n += sprintf(buff + n, "   ");
+        n += sprintf(buff + n, " - ");
+        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
+            n += sprintf(buff + n, "%c", pd[i] >= ' ' && pd[i] < 0x7f ? pd[i] : '.');
+        printf("%s\r\n", buff);
+    }
+}
+#define DUMP_DATA	dump_data
+#else
+#define DUMP_DATA
+#endif
+
 #endif	 /* _KNOT_HAL_DEBUG_H */

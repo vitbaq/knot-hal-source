@@ -81,17 +81,14 @@ static int nrf24_close(int socket)
 		return ERROR;
 	}
 
+	if (m_state == eCLIENT) {
+		nrf24l01_client_close(socket);
+	}
 #ifndef ARDUINO
 	if (m_state == eSERVER) {
 		nrf24l01_server_close(socket);
-	} else if (m_state == eCLIENT) {
-		nrf24l01_client_close(socket);
 	}
 	close(socket);
-#else
-	if (state == eCLIENT) {
-		nrf24l01_client_close(socket);
-	}
 #endif
 	if (socket == m_fd) {
 		m_fd = SOCKET_INVALID;
@@ -100,7 +97,7 @@ static int nrf24_close(int socket)
 	return SUCCESS;
 }
 
-static int nrf24_listen(int socket, int channel)
+static int nrf24_listen(int socket, int channel, const void *pstr_addr, size_t lstr_addr)
 {
 #ifndef ARDUINO
 	int result;
@@ -116,7 +113,7 @@ static int nrf24_listen(int socket, int channel)
 		return ERROR;
 	}
 
-	if (channel < CH_MIN || channel > CH_MAX_1MBPS) {
+	if (channel < CH_MIN || channel > CH_MAX_1MBPS || pstr_addr == NULL || lstr_addr == 0) {
 		errno = EINVAL;
 		return ERROR;
 	}
@@ -124,8 +121,8 @@ static int nrf24_listen(int socket, int channel)
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	/* Abstract namespace: first character must be null */
-	strncpy(addr.sun_path+1, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE);
-	if (bind(m_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+	strncpy(addr.sun_path+1, (const char *__restrict)pstr_addr, lstr_addr);
+	if (bind(socket, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
 		return ERROR;
 	}
 
@@ -133,7 +130,7 @@ static int nrf24_listen(int socket, int channel)
 		return ERROR;
 	}
 
-	result = nrf24l01_server_open(socket, channel, &m_version);
+	result = nrf24l01_server_open(socket, channel, &m_version, pstr_addr, lstr_addr);
 	if (result == SUCCESS) {
 		m_state = eSERVER;
 	}
@@ -177,9 +174,11 @@ static int nrf24_read(int socket, void *buffer, size_t len)
 		return ERROR;
 	}
 
+#ifndef ARDUINO
 	if (m_state == eSERVER) {
 		return read(socket, buffer, len);
 	}
+#endif
 
 	return nrf24l01_client_read(socket, buffer, len);
 }
@@ -191,11 +190,13 @@ static int nrf24_write(int socket, const void *buffer, size_t len)
 		return ERROR;
 	}
 
+#ifndef ARDUINO
 	if (m_state == eSERVER) {
 		return write(socket, buffer, len);
 	}
+#endif
 
-	return nrf24l01_client_write(socket, buffer, len);
+	return nrf24l01_client_write(socket, (const byte_t*)buffer, len);
 }
 
 static int nrf24_probe(size_t packet_size)

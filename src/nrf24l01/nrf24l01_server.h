@@ -12,7 +12,6 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/un.h>
-#include <glib.h>
 
 #include "nrf24l01.h"
 #include "util.h"
@@ -27,11 +26,7 @@
 extern "C"{
 #endif
 
-/* Abstract unit socket namespace */
-#define KNOT_UNIX_SOCKET				"knot_nrf24l01"
-#define KNOT_UNIX_SOCKET_SIZE		(sizeof(KNOT_UNIX_SOCKET) - 1)
-
-int nrf24l01_server_open(int socket, int channel, version_t *pversion);
+int nrf24l01_server_open(int socket, int channel, version_t *pversion, const void *pstr_addr, size_t lstr_addr);
 int nrf24l01_server_close(int socket);
 
 #ifdef __cplusplus

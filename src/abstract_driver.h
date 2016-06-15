@@ -31,6 +31,7 @@ extern "C"{
 
 #ifdef ARDUINO
 #define	EPERM			1		/* Operation not permitted */
+#define	EIO					5		/* I/O error */
 #define	EBADF			9		/* Bad file number */
 #define	EAGAIN			11	/* Try again */
 #define	ENOMEM		12	/* Out of memory */
@@ -76,7 +77,7 @@ typedef struct {
 
 	int (*socket)(void);
 	int (*close)(int sockfd);
-	int (*listen)(int sockfd, int backlog);
+	int (*listen)(int sockfd, int backlog, const void *addr, size_t len);
 	int (*connect)(int cli_sockfd, const void *addr, size_t len);
 	int (*available)(int sockfd);
 	int (*read)(int sockfd, void *buffer, size_t len);

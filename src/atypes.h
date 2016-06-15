@@ -38,15 +38,18 @@
 extern "C"{
 #endif
 
-/* Fast types definition for the platforms */
+/* Fast types definition for the small platforms */
 typedef uint_fast8_t		byte_t;
 typedef int_fast8_t			char_t;
 typedef uint_fast16_t		uint_t;
 typedef int_fast16_t		int_t;
 typedef char_t					result_t;
-typedef void						*pdata_t;
+typedef void *					pdata_t;
 typedef uint_t					len_t;
 #define	LEN_T_MAX		((uint_fast16_t)-1)
+
+typedef unsigned long	ulong_t;
+#define ULONG_T_MAX	((ulong_t)-1)
 
 #ifdef __GNUC__
 #define likely(x)       __builtin_expect(!!(x), 1)

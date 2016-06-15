@@ -37,6 +37,10 @@
 // application packet size maximum
 #define PACKET_SIZE_MAX		128
 
+/* Abstract unit socket namespace */
+#define KNOT_UNIX_SOCKET				"test_knot_nrf24l01"
+#define KNOT_UNIX_SOCKET_SIZE		(sizeof(KNOT_UNIX_SOCKET) - 1)
+
 /*
  * Device session storing the connected
  * device context: 'drivers' and file descriptors
@@ -160,7 +164,7 @@ static int start_server(void)
 		return 1;
 	}
 
-	if (nrf24l01_driver.listen(sock, 10) == ERROR) {
+	if (nrf24l01_driver.listen(sock, 10, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE) == ERROR) {
 		fprintf(stderr, "listen(%d): %s\n", errno, strerror(errno));
 		nrf24l01_driver.close(sock);
 		nrf24l01_driver.remove();

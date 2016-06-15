@@ -74,28 +74,3 @@ int tline_out(ulong_t time,  ulong_t last,  ulong_t timeout)
     /* Timeout is flagged */
     return (time >= timeout);
 }
-
-int dump_data(const char *str, int port, void *pdata, int len)
-{
-    int i, off, col, n;
-    unsigned char *pd = pdata;
-    char buff[256];
-
-    for (off = n = 0; off < len; off += 16) {
-    	if (port != -1) {
-    		n = sprintf(buff, "%s[%d][%04d]", str, port, off);
-    	} else {
-    		n = sprintf(buff, "%s[%04d]", str, off);
-    	}
-        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
-            n += sprintf(buff + n, " %02lX", (ulong_t)pd[i]);
-        // if (col != 0 && off != 0)
-        for (; col != 0; --col)
-            n += sprintf(buff + n, "   ");
-        n += sprintf(buff + n, " - ");
-        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
-            n += sprintf(buff + n, "%c", pd[i] >= ' ' && pd[i] < 0x7f ? pd[i] : '.');
-        printf("%s\r\n", buff);
-    }
-    return 0;
-}

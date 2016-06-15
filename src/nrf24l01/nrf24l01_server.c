@@ -6,17 +6,12 @@
 * of the BSD license. See the LICENSE file for details.
 *
 */
-#ifndef ARDUINO
+#include <glib.h>
 
 #include "nrf24l01_server.h"
 
-//#define TRACE_ALL
+#define TRACE_ALL
 #include "debug.h"
-#ifdef TRACE_ALL
-#define DUMP_DATA	dump_data
-#else
-#define DUMP_DATA
-#endif
 
 #define NEXT_CH	2
 
@@ -54,7 +49,7 @@ typedef struct  {
 	uint16_t		net_addr,
 						packet_size;
 	uint32_t		hashid;
-	ulong_t		heartbeat;
+	ulong_t		heartbeat_wait;
 	data_t			*rxmsg;
 } client_t;
 
@@ -63,9 +58,11 @@ static volatile int		m_fd = SOCKET_INVALID,
 static GThread			*m_gthread = NULL;
 static GMainLoop	*m_loop = NULL;
 static GSList				*m_pclients = NULL;
-static bool					m_pipes_allocate[NRF24L01_PIPE_ADDR_MAX] =  { false, false, false, false, false };
+static client_t			*m_pipes_allocate[NRF24L01_PIPE_ADDR_MAX] =  {NULL, NULL, NULL, NULL, NULL};
 static data_t				*m_gwreq = NULL;
 static version_t		*m_pversion = NULL;
+static const void		*m_pstr_addr;
+static size_t				m_lstr_addr;
 
 static LIST_HEAD(m_ptx_list);
 static G_LOCK_DEFINE(m_ptx_list);
@@ -73,20 +70,28 @@ static G_LOCK_DEFINE(m_ptx_list);
 /*
  * Local functions
  */
-static inline int set_pipe(int pipe, bool value)
+static inline int set_pipe(int pipe, client_t *pc)
 {
 	if (pipe > BROADCAST && pipe < (NRF24L01_PIPE_ADDR_MAX+1)) {
-		m_pipes_allocate[pipe-1] = value;
+		m_pipes_allocate[pipe-1] = pc;
 	}
 	return 0;
+}
+
+static inline client_t *get_pipe(int pipe)
+{
+	if (pipe > BROADCAST && pipe < (NRF24L01_PIPE_ADDR_MAX+1)) {
+		return m_pipes_allocate[pipe-1];
+	}
+	return NULL;
 }
 
 static int get_pipe_free(void)
 {
 	int 			pipe;
-	bool		*pa = m_pipes_allocate;
+	client_t	**pa = m_pipes_allocate;
 
-	for (pipe=NRF24L01_PIPE_ADDR_MAX; pipe!=0 && *pa; --pipe, ++pa)
+	for (pipe=NRF24L01_PIPE_ADDR_MAX; pipe!=0 && *pa != NULL; --pipe, ++pa)
 		;
 
 	return (pipe != 0 ? (NRF24L01_PIPE_ADDR_MAX - pipe) + 1 : NRF24L01_NO_PIPE);
@@ -109,7 +114,7 @@ static void client_free(client_t *pc)
 	data_t *pdata, *pnext;
 
 	client_disconnect(pc);
-	set_pipe(pc->pipe, false);
+	set_pipe(pc->pipe, NULL);
 	g_free(pc->rxmsg);
 	G_LOCK(m_ptx_list);
 	list_for_each_entry_safe(pdata, pnext, &m_ptx_list, node) {
@@ -189,7 +194,7 @@ static data_t *build_data(int pipe, int net_addr, int msg_type, pdata_t praw, le
 	return msg;
 }
 
-static int send_payload(data_t *pdata)
+static int send_data(data_t *pdata)
 {
 	payload_t payload;
 	int len = pdata->len;
@@ -227,6 +232,57 @@ static inline void put_ptx_queue(data_t *pd)
 	G_LOCK(m_ptx_list);
 	list_move_tail(&pd->node, &m_ptx_list);
 	G_UNLOCK(m_ptx_list);
+}
+
+static int ptx_service(void)
+{
+	if (!list_empty(&m_ptx_list)) {
+		static int send_state = ePTX_FIRE;
+		static ulong_t	start = 0,
+									delay = 0;
+		static data_t		*pdata = NULL;
+
+		switch (send_state) {
+		case  ePTX_FIRE:
+			start = tline_ms();
+			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
+			send_state = ePTX_GAP;
+			/* No break; fall through intentionally */
+		case ePTX_GAP:
+			if (!tline_out(tline_ms(), start, delay)) {
+				break;
+			}
+			send_state = ePTX;
+			/* No break; fall through intentionally */
+		case ePTX:
+			G_LOCK(m_ptx_list);
+			pdata = list_first_entry(&m_ptx_list, data_t, node);
+			list_del_init(&pdata->node);
+			G_UNLOCK(m_ptx_list);
+			if (send_data(pdata) != SUCCESS) {
+				if (--pdata->retry == 0) {
+					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
+					if (get_pipe(pdata->pipe) != NULL) {
+						client_disconnect(get_pipe(pdata->pipe));
+					}
+					g_free(pdata);
+				} else {
+					pdata->offset = pdata->offset_retry;
+					put_ptx_queue(pdata);
+				}
+			} else 	if (pdata->len != pdata->offset) {
+				TRACE("Message fragment sent to the pipe#%d len=%d\n", pdata->pipe, pdata->len);
+				put_ptx_queue(pdata);
+			} else {
+				if (get_pipe(pdata->pipe) != NULL) {
+					get_pipe(pdata->pipe)->heartbeat_wait = tline_ms();
+				}
+				g_free(pdata);
+			}
+			send_state = ePTX_FIRE;
+			break;
+		}
+	}
 }
 
 static gboolean client_watch(GIOChannel *io, GIOCondition cond, gpointer user_data)
@@ -293,7 +349,7 @@ static int set_new_client(payload_t *ppl, int len)
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	/* abstract namespace: first character must be null */
-	strncpy(addr.sun_path + 1, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE);
+	strncpy(addr.sun_path+1, (const char *__restrict)m_pstr_addr, m_lstr_addr);
 	if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
 		TERROR(" >connect() failure: %s\n", strerror(errno));
 		close(sock);
@@ -312,8 +368,8 @@ static int set_new_client(payload_t *ppl, int len)
 	pc->net_addr = ppl->hdr.net_addr;
 	pc->packet_size = ppl->msg.join.version.packet_size;
 	pc->hashid = ppl->msg.join.hashid;
-	pc->heartbeat = tline_ms();
-	set_pipe(pipe, true);
+	pc->heartbeat_wait = tline_ms();
+	set_pipe(pipe, pc);
 
 	sock_io = g_io_channel_unix_new(sock);
 	if(sock_io == NULL)
@@ -339,7 +395,7 @@ static int set_new_client(payload_t *ppl, int len)
 
 static void check_heartbeat(gpointer pentry, gpointer user_data)
 {
-	if (tline_out(tline_ms(), ((client_t*)pentry)->heartbeat, NRF24_HEARTBEAT_TIMEOUT_MS)) {
+	if (tline_out(tline_ms(), ((client_t*)pentry)->heartbeat_wait, NRF24_HEARTBEAT_TIMEOUT_MS)) {
 		client_disconnect((client_t*)pentry);
 	}
 }
@@ -400,7 +456,7 @@ static int prx_service(void)
 				}
 				pentry = g_slist_find_custom(m_pclients, &data, join_match);
 				if (pentry != NULL) {
-					((client_t*)pentry)->heartbeat = tline_ms();
+					((client_t*)pentry)->heartbeat_wait = tline_ms();
 					data.msg.join.result = NRF24_SUCCESS;
 				} else {
 					data.msg.join.result = NRF24_ECONNREFUSED;
@@ -416,79 +472,37 @@ static int prx_service(void)
 				/* No break; fall through intentionally */
 			case NRF24_APP_LAST:
 			case NRF24_APP:
-				pentry = g_slist_find_custom(m_pclients, &data, join_match);
-				if (pentry != NULL && ((client_t*)pentry)->pipe == pipe) {
-					client_t *pc = (client_t*)pentry;
+				{
+					client_t *pc = get_pipe(pipe);
 					int size;
-					if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_FIRST) {
-						g_free(pc->rxmsg);
-						pc->rxmsg = NULL;
-						size = len;
-					} else {
-						size = pc->rxmsg->len + len;
-					}
-					if (size <= pc->packet_size && size <= m_pversion->packet_size) {
-						pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
-						if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_LAST) {
-							write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
+
+					if (pc != NULL && pc->pipe == pipe && pc->net_addr == data.hdr.net_addr) {
+						pc->heartbeat_wait = tline_ms();
+						if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_FIRST) {
 							g_free(pc->rxmsg);
 							pc->rxmsg = NULL;
+							size = len;
+						} else {
+							size = pc->rxmsg->len + len;
+						}
+						if (size <= pc->packet_size && size <= m_pversion->packet_size) {
+							pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
+							if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_LAST) {
+								write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
+								g_free(pc->rxmsg);
+								pc->rxmsg = NULL;
+							}
 						}
 					}
+					break;
 				}
-				break;
 			}
 		}
 	}
 
 	g_slist_foreach(m_pclients, check_heartbeat, NULL);
 
-	if (!list_empty(&m_ptx_list)) {
-		static int send_state = ePTX_FIRE;
-		static ulong_t	start = 0,
-									delay = 0;
-		static data_t *pdata = NULL;
-
-		switch (send_state) {
-		case  ePTX_FIRE:
-			start = tline_ms();
-			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
-			send_state = ePTX_GAP;
-			/* No break; fall through intentionally */
-		case ePTX_GAP:
-			if (!tline_out(tline_ms(), start, delay)) {
-				break;
-			}
-			send_state = ePTX;
-			/* No break; fall through intentionally */
-		case ePTX:
-			G_LOCK(m_ptx_list);
-			pdata = list_first_entry(&m_ptx_list, data_t, node);
-			list_del_init(&pdata->node);
-			G_UNLOCK(m_ptx_list);
-			if (send_payload(pdata) != SUCCESS) {
-				if (--pdata->retry == 0) {
-					//TODO: next step, error issue to the application if sent NRF24_APP message fail
-					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
-					g_free(pdata);
-				} else {
-					pdata->offset = pdata->offset_retry;
-					G_LOCK(m_ptx_list);
-					list_move_tail(&pdata->node, &m_ptx_list);
-					G_UNLOCK(m_ptx_list);
-				}
-			} else 	if (pdata->len == pdata->offset) {
-				g_free(pdata);
-			} else {
-				TRACE("Message fragment sent to the pipe#%d len=%d\n", pdata->pipe, pdata->len);
-				G_LOCK(m_ptx_list);
-				list_move_tail(&pdata->node, &m_ptx_list);
-				G_UNLOCK(m_ptx_list);
-			}
-			send_state = ePTX_FIRE;
-			break;
-		}
-	}
+	ptx_service();
 
 	return ePRX;
 }
@@ -538,7 +552,7 @@ static int gwreq(bool reset)
 	case eREQUEST:
 		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
 		TRACE("Server joins ch#%d retry=%d/%d delay=%ld\n", ch, m_gwreq->net_addr, m_gwreq->retry, delay);
-		send_payload(m_gwreq);
+		send_data(m_gwreq);
 		m_gwreq->offset = 0;
 		start = tline_ms();
 		state = ePENDING;
@@ -658,7 +672,7 @@ static gpointer service_thread(gpointer dummy)
  * Global functions
  */
 
-int nrf24l01_server_open(int socket, int channel, version_t *pversion)
+int nrf24l01_server_open(int socket, int channel, version_t *pversion, const void *pstr_addr, size_t lstr_addr)
 {
 	if (socket == SOCKET_INVALID) {
 		errno = EBADF;
@@ -678,6 +692,8 @@ int nrf24l01_server_open(int socket, int channel, version_t *pversion)
 	fprintf(stdout, "Server try to join on channel #%d\n", nrf24l01_get_channel());
 	m_fd = socket;
 	m_pversion = pversion;
+	m_pstr_addr = pstr_addr;
+	m_lstr_addr = lstr_addr;
 
 	m_gthread = g_thread_new("service_thread", service_thread, NULL);
 	if (m_gthread == NULL) {
@@ -704,5 +720,3 @@ int nrf24l01_server_close(int socket)
 	}
 	return SUCCESS;
 }
-
-#endif		// ARDUINO
