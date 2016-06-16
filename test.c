@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <signal.h>
 
 #include <glib.h>
 
@@ -37,7 +38,7 @@
 // application packet size maximum
 #define PACKET_SIZE_MAX		128
 
-/* Abstract unit socket namespace */
+/* Abstract unit socket name space */
 #define KNOT_UNIX_SOCKET				"test_knot_nrf24l01"
 #define KNOT_UNIX_SOCKET_SIZE		(sizeof(KNOT_UNIX_SOCKET) - 1)
 

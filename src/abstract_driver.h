@@ -41,7 +41,10 @@ extern "C"{
 #define	EMFILE			24	/* Too many open files */
 
 #define	ECOMM						70	/* Communication error on send */
+#define	EOVERFLOW			75	/* Value too large for defined data type */
+#define	EUSERS					87	/* Too many users */
 #define	EMSGSIZE				90	/* Message too long */
+#define	ECONNRESET		104	/* Connection reset by peer */
 #define	ETIMEDOUT				110	/* Connection timed out */
 #define	ECONNREFUSED	111	/* Connection refused */
 #define	EHOSTDOWN			112	/* Host is down */
@@ -74,7 +77,6 @@ typedef struct {
 	const char *name;
 	int (*probe)(size_t packet_size);
 	void (*remove)(void);
-
 	int (*socket)(void);
 	int (*close)(int sockfd);
 	int (*listen)(int sockfd, int backlog, const void *addr, size_t len);

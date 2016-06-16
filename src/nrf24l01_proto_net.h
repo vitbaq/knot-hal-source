@@ -11,11 +11,27 @@
 #ifndef __NRF24L01_PROTO_NET_H__
 #define __NRF24L01_PROTO_NET_H__
 
+// Network messages
+enum {
+	NRF24_GATEWAY_REQ,
+	NRF24_JOIN_LOCAL,
+	NRF24_UNJOIN_LOCAL,
+	NRF24_HEARTBEAT,
+	NRF24_APP,
+	NRF24_APP_FIRST,
+	NRF24_APP_FRAG,
+	NRF24_APP_LAST
+};
+
 // net layer result codes
-#define NRF24_SUCCESS						0
-#define NRF24_ERROR							-1
-#define NRF24_INVALID_VERSION		-2
-#define NRF24_ECONNREFUSED		-3
+enum {
+	NRF24_SUCCESS,
+	NRF24_ERROR,
+	NRF24_INVALID_VERSION,
+	NRF24_ECONNREFUSED,
+	NRF24_EUSERS,
+	NRF24_EOVERFLOW
+};
 
 // Network retransmiting parameters
 #define NRF24_TIMEOUT_MS								(3 * NRF24L01_ARC)		// 3ms is the ARD maximum of the last pipe, range 1ms <= ARD <= 3ms
@@ -32,16 +48,6 @@
 #define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - (NRF24_HEARTBEAT_SEND_MS + SEND_INTERVAL)) / SEND_INTERVAL)
 
 #define BROADCAST			NRF24L01_PIPE0_ADDR
-
-// Network messages
-#define NRF24_GATEWAY_REQ	0x00
-#define NRF24_JOIN_LOCAL			0x01
-#define NRF24_UNJOIN_LOCAL	0x02
-#define NRF24_HEARTBEAT			0x03
-#define NRF24_APP							0x04
-#define NRF24_APP_FIRST			0x05
-#define NRF24_APP_FRAG				0x06
-#define NRF24_APP_LAST				0x07
 
 /**
  * struct hdr_t - net layer message header

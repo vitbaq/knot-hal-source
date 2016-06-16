@@ -17,24 +17,20 @@
 #define random(value)	rand()
 #endif
 
-/* The largest number rand will return.  */
-#ifndef RAND_MAX
-#define	RAND_MAX	2147483647L
-#endif
+static enum {
+	UNKNOWN,
+	REQUEST,
+	PENDING,
+	TIMEOUT,
+	USERS,
+	OVERFLOW,
+	PRX,
+	PTX_FIRE,
+	PTX_GAP,
+	PTX
+} e_state;
 
-enum {
-	eUNKNOWN,
-	eREQUEST,
-	ePENDING,
-	eTIMEOUT,
-	eECONNREFUSED,
-	ePRX,
-	ePTX_FIRE,
-	ePTX_GAP,
-	ePTX
-} ;
-
-typedef struct __attribute__ ((packed)) {
+typedef struct {
 	byte_t	msg_type,
 				pipe;
 	uint_t	net_addr;
@@ -43,7 +39,7 @@ typedef struct __attribute__ ((packed)) {
 				offset_retry;
 } data_t;
 
-typedef struct __attribute__ ((packed)) {
+typedef struct {
 	uint_t		net_addr;
 	uint32_t	hashid;
 	ulong_t	heartbeat_wait;
@@ -51,7 +47,7 @@ typedef struct __attribute__ ((packed)) {
 					heartbeat;
 } client_t;
 
-typedef struct __attribute__ ((packed)) {
+typedef struct {
 	ulong_t	start,
 					delay;
 } tline_t;
@@ -84,7 +80,7 @@ static int_t get_random_value(int_t interval, int_t ntime, int_t min)
 
 static void disconnect(void)
 {
-	fprintf(stdout, "Client leaves this channel #%d\n", nrf24l01_get_channel());
+	TRACE("Client leaves this channel #%d\n", nrf24l01_get_channel());
 	nrf24l01_set_standby();
 	nrf24l01_close_pipe(0);
 	memset(&m_client, 0, sizeof(m_client));
@@ -138,24 +134,24 @@ static int_t send_data(data_t *pd, pdata_t praw, len_t len)
 
 static int_t ptx_service(data_t *pd, pdata_t praw, len_t len)
 {
-	int	state = ePTX_FIRE,
+	int	state = PTX_FIRE,
 			result = SUCCESS;
 	tline_t	timer;
 
-	while (state != ePTX) {
+	while (state != PTX) {
 		switch (state) {
-		case  ePTX_FIRE:
+		case  PTX_FIRE:
 			timer.start = tline_ms();
 			timer.delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
-			state = ePTX_GAP;
+			state = PTX_GAP;
 			/* No break; fall through intentionally */
-		case ePTX_GAP:
+		case PTX_GAP:
 			if (!tline_out(tline_ms(), timer.start, timer.delay)) {
 				break;
 			}
-			state = ePTX;
+			state = PTX;
 			/* No break; fall through intentionally */
-		case ePTX:
+		case PTX:
 			result = send_data(pd, praw, len);
 			if (result != SUCCESS) {
 				if (--pd->retry == 0) {
@@ -163,10 +159,10 @@ static int_t ptx_service(data_t *pd, pdata_t praw, len_t len)
 					disconnect();
 				} else {
 					pd->offset = pd->offset_retry;
-					state = ePTX_FIRE;
+					state = PTX_FIRE;
 				}
 			} else 	if (len != pd->offset) {
-				state = ePTX_FIRE;
+				state = PTX_FIRE;
 			} else if (!m_client.heartbeat) {
 				m_client.heartbeat_wait = tline_ms();
 			}
@@ -271,7 +267,7 @@ static int_t clireq_read(uint16_t net_addr, join_t *pj, tline_t *pt)
 			data.hdr.net_addr == net_addr && data.msg.join.hashid == pj->hashid &&
 			data.hdr.msg_type == NRF24_JOIN_LOCAL) {
 			if (data.msg.result != NRF24_SUCCESS) {
-				return eECONNREFUSED;
+				return (data.msg.result == NRF24_EUSERS ? USERS : OVERFLOW);
 			}
 
 			m_client.pipe = data.msg.join.data;
@@ -283,16 +279,16 @@ static int_t clireq_read(uint16_t net_addr, join_t *pj, tline_t *pt)
 			nrf24l01_close_pipe(0);
 			nrf24l01_open_pipe(0, m_client.pipe);
 			nrf24l01_set_prx();
-			return ePRX;
+			return PRX;
 		}
 	}
 
-	return (tline_out(tline_ms(), pt->start, pt->delay) ? eTIMEOUT : ePENDING);
+	return (tline_out(tline_ms(), pt->start, pt->delay) ? TIMEOUT : PENDING);
 }
 
 static int_t join_local(void)
 {
-	int_t state = eREQUEST;
+	int_t state = REQUEST;
 	tline_t	timer;
 	join_t	join;
 	data_t data;
@@ -309,27 +305,27 @@ static int_t join_local(void)
 	build_data(&data, BROADCAST, ((join.hashid / 65536) ^ join.hashid), NRF24_JOIN_LOCAL);
 	data.retry = get_random_value(JOINREQ_RETRY, 2, JOINREQ_RETRY);
 
-	while (state == eREQUEST || state == ePENDING) {
+	while (state == REQUEST || state == PENDING) {
 		switch (state) {
-		case eREQUEST:
+		case REQUEST:
 			timer.delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
-			TRACE("Client joins ch#%d retry=%d delay=%ld\n", nrf24l01_get_channel(), data.retry, delay);
+			TRACE("Client joins ch#%d retry=%ld delay=%ld\n", nrf24l01_get_channel(), data.retry, timer.delay);
 			send_data(&data, &join, sizeof(join_t));
 			data.offset = 0;
 			timer.start = tline_ms();
-			state = ePENDING;
+			state = PENDING;
 			break;
 
-		case ePENDING:
+		case PENDING:
 			state = clireq_read(data.net_addr, &join, &timer);
-			if (state == eTIMEOUT && --data.retry != 0) {
-				state = eREQUEST;
+			if (state == TIMEOUT && --data.retry != 0) {
+				state = REQUEST;
 			}
 			break;
 		}
 	}
 
-	if (state != ePRX) {
+	if (state != PRX) {
 		nrf24l01_set_standby();
 		nrf24l01_close_pipe(0);
 	}
@@ -378,21 +374,19 @@ int_t nrf24l01_client_open(int_t socket, byte_t channel, version_t *pversion)
 	m_fd = socket;
 	m_pversion = pversion;
 
-	fprintf(stdout, "Client try to join on channel #%d\n", nrf24l01_get_channel());
 	ret = join_local();
-	if (ret != ePRX) {
-		if (ret == eTIMEOUT) {
-			fprintf(stdout, "Client not joined on channel #%d\n", nrf24l01_get_channel());
-			errno = ETIMEDOUT;
-		} else {
-			fprintf(stdout, "Client is refused the channel #%d\n", nrf24l01_get_channel());
-			errno = ECONNREFUSED;
-		}
-		return ERROR;
+	if (ret == PRX) {
+		return SUCCESS;
 	}
 
-	fprintf(stdout, "Client joined on channel #%d\n", nrf24l01_get_channel());
-	return SUCCESS;
+	if (ret == TIMEOUT) {
+		errno = ETIMEDOUT;
+	} else if (ret == USERS) {
+		errno = EUSERS;
+	} else {
+		errno = EOVERFLOW;
+	}
+	return ERROR;
 }
 
 int_t nrf24l01_client_close(int_t socket)
