@@ -251,7 +251,7 @@ static int ptx_service(void)
 		switch (send_state) {
 		case  PTX_FIRE:
 			start = tline_ms();
-			delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
+			delay = get_random_value(SEND_RANGE_MS, SEND_FACTOR, SEND_RANGE_MS_MIN);
 			send_state = PTX_GAP;
 			/* No break; fall through intentionally */
 		case PTX_GAP:
@@ -559,7 +559,7 @@ static int gwreq(bool reset)
 
 	switch(state) {
 	case REQUEST:
-		delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
+		delay = get_random_value(SEND_RANGE_MS, SEND_FACTOR, SEND_RANGE_MS_MIN);
 		TRACE("Server joins ch#%d retry=%d/%d delay=%ld\n", ch, m_gwreq->net_addr, m_gwreq->retry, delay);
 		send_data(m_gwreq);
 		m_gwreq->offset = 0;

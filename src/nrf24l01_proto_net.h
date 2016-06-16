@@ -11,7 +11,7 @@
 #ifndef __NRF24L01_PROTO_NET_H__
 #define __NRF24L01_PROTO_NET_H__
 
-// Network messages
+// network messages
 enum {
 	NRF24_GATEWAY_REQ,
 	NRF24_JOIN_LOCAL,
@@ -23,7 +23,7 @@ enum {
 	NRF24_APP_LAST
 };
 
-// net layer result codes
+// network result codes
 enum {
 	NRF24_SUCCESS,
 	NRF24_ERROR,
@@ -33,19 +33,20 @@ enum {
 	NRF24_EOVERFLOW
 };
 
-// Network retransmiting parameters
-#define NRF24_TIMEOUT_MS								(3 * NRF24L01_ARC)		// 3ms is the ARD maximum of the last pipe, range 1ms <= ARD <= 3ms
+// network retransmiting parameters
+#define NRF24_TIMEOUT_MS								(NRF24L01_ARD_MAX * NRF24L01_ARC_MAX)
 #define NRF24_HEARTBEAT_SEND_MS			1000
 #define NRF24_HEARTBEAT_TIMEOUT_MS		(NRF24_HEARTBEAT_SEND_MS * 2)
 #define NRF24_RETRIES											200
 
-// defines constant time values
-#define SEND_DELAY_MS	1
-#define SEND_INTERVAL	NRF24_TIMEOUT_MS	//SEND_DELAY_MS <= delay <= (SEND_INTERVAL * SEND_DELAY_MS)
+// constant time values
+#define SEND_FACTOR					1
+#define SEND_RANGE_MS_MIN	NRF24L01_ARD_MAX
+#define SEND_RANGE_MS				NRF24_TIMEOUT_MS	//SEND_RANGE_MS_MIN <= delay <= (SEND_RANGE_MS * SEND_FACTOR)
 
-// defines constant retry values
+// constant retry values
 #define JOINREQ_RETRY	NRF24_RETRIES
-#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - (NRF24_HEARTBEAT_SEND_MS + SEND_INTERVAL)) / SEND_INTERVAL)
+#define SEND_RETRY			((NRF24_HEARTBEAT_TIMEOUT_MS - (NRF24_HEARTBEAT_SEND_MS + SEND_RANGE_MS)) / SEND_RANGE_MS)
 
 #define BROADCAST			NRF24L01_PIPE0_ADDR
 

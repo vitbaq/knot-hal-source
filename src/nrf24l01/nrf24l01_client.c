@@ -142,7 +142,7 @@ static int_t ptx_service(data_t *pd, pdata_t praw, len_t len)
 		switch (state) {
 		case  PTX_FIRE:
 			timer.start = tline_ms();
-			timer.delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
+			timer.delay = get_random_value(SEND_RANGE_MS, SEND_FACTOR, SEND_RANGE_MS_MIN);
 			state = PTX_GAP;
 			/* No break; fall through intentionally */
 		case PTX_GAP:
@@ -308,7 +308,7 @@ static int_t join_local(void)
 	while (state == REQUEST || state == PENDING) {
 		switch (state) {
 		case REQUEST:
-			timer.delay = get_random_value(SEND_INTERVAL, SEND_DELAY_MS, SEND_DELAY_MS);
+			timer.delay = get_random_value(SEND_RANGE_MS, SEND_FACTOR, SEND_RANGE_MS_MIN);
 			TRACE("Client joins ch#%d retry=%ld delay=%ld\n", nrf24l01_get_channel(), data.retry, timer.delay);
 			send_data(&data, &join, sizeof(join_t));
 			data.offset = 0;
