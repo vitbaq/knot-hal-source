@@ -20,7 +20,8 @@ static void sig_term(int sig)
 int main(void)
 {
 	int sock;
-	int channel = 10;
+	int channel = 10,
+		  count;
 	bool connected = false;
 	ssize_t nbytes;
 	char buffer[PACKET_SIZE_MAX];
@@ -48,6 +49,7 @@ int main(void)
 			} else {
 				fprintf(stdout, " connect(%d): %s\n", errno, strerror(errno));
 				connected = true;
+				count = 0;
 			}
 		} else {
 			nbytes = nrf24l01_driver.read(sock, buffer, sizeof(buffer));
@@ -55,7 +57,12 @@ int main(void)
 				nrf24l01_driver.close(sock);
 				connected = false;
 			}
-			printf("nbytes=%ld\n", nbytes);
+			if (nbytes > 0) {
+				fprintf(stdout, " MSG(%ld)>> '%.*s'\n", nbytes, (int)nbytes, buffer);
+			}
+			nbytes = sprintf(buffer, "Diogenes %d", ++count);
+			nbytes = nrf24l01_driver.write(sock, buffer, nbytes);
+			fprintf(stdout, "write(%d): %s\n", errno, strerror(errno));
 		}
 		sleep(1);
 	}

@@ -56,7 +56,8 @@ static guint	watch_id;
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
-	char msg[PACKET_SIZE_MAX];
+	char msg[PACKET_SIZE_MAX],
+			 msg2[PACKET_SIZE_MAX];
 	session_t *ps = user_data;
 	ssize_t nbytes;
 	int sock;
@@ -73,7 +74,9 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		return FALSE;
 	}
 
-	fprintf(stdout, "MSG(%ld)>> '%s'\n", nbytes, msg);
+	fprintf(stdout, " MSG(%ld)>> '%.*s'\n", nbytes, (int)nbytes, msg);
+	nbytes = sprintf(msg2, "%.*s %s", (int)nbytes, msg, "Pereira.");
+	write(sock, msg2, nbytes);
 	return TRUE;
 }
 
