@@ -594,7 +594,7 @@ static int gwreq(bool reset)
 
 	case TIMEOUT:
 		if (--m_gwreq->net_addr == 0) {
-			fprintf(stdout, "Server join on channel #%d\n", nrf24l01_get_channel());
+			TRACE("Server join on channel #%d\n", nrf24l01_get_channel());
 			ret = PRX;
 			break;
 		}
@@ -610,7 +610,7 @@ static int gwreq(bool reset)
 			nrf24l01_set_channel(ch);
 		}
 		if(ch == ch0) {
-			fprintf(stdout, "Server didn't find channel free\n");
+			TRACE("Server didn't find channel free\n");
 			ret = CHANNEL_BUSY;
 			break;
 		}
@@ -719,7 +719,7 @@ int nrf24l01_server_open(int socket, int channel, version_t *pversion, const voi
 		return ERROR;
 	}
 
-	fprintf(stdout, "Server try to join on channel #%d\n", nrf24l01_get_channel());
+	TRACE("Server try to join on channel #%d\n", nrf24l01_get_channel());
 	m_fd = socket;
 	m_pversion = pversion;
 	m_paddr = paddr;
@@ -731,6 +731,7 @@ int nrf24l01_server_open(int socket, int channel, version_t *pversion, const voi
 		return ERROR;
 	}
 
+	errno = 0;
 	return SUCCESS;
 }
 
@@ -748,5 +749,6 @@ int nrf24l01_server_close(int socket)
 			m_gthread == NULL;
 		}
 	}
+	errno = 0;
 	return SUCCESS;
 }

@@ -571,7 +571,6 @@ result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack)
 		return ERROR;
 	}
 
-	printf("%s: ack=%d:%#04x\n", __func__, ack, !ack ? W_TX_PAYLOAD_NOACK : W_TX_PAYLOAD);
 	return command_data(!ack ? W_TX_PAYLOAD_NOACK : W_TX_PAYLOAD, pdata, len);
 }
 
@@ -581,13 +580,11 @@ result_t nrf24l01_ptx_wait_datasent(void)
 		byte_t value;
 		while (!((value=inr(STATUS)) & ST_TX_DS)) {
 			if (value & ST_MAX_RT) {
-				printf("%s: MAX_RT=%#04x\n", __func__, value);
 				outr(STATUS, ST_MAX_RT);
 				command(FLUSH_TX);
 				return ERROR;
 			}
 		}
-		printf("%s: TX_DS=%#04x\n", __func__, value);
 	}
 
 	return SUCCESS;

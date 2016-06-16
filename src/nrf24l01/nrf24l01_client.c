@@ -49,7 +49,7 @@ typedef struct {
 					delay;
 } tline_t;
 
-static int				m_fd = SOCKET_INVALID;
+static int_t				m_fd = SOCKET_INVALID;
 static version_t	*m_pversion = NULL;
 static client_t		m_client;
 
@@ -155,6 +155,7 @@ static int_t ptx_service(data_t *pdata, pdata_t praw, len_t len)
 				if (--pdata->retry == 0) {
 					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
 					disconnect();
+					errno = EBADF;
 				} else {
 					pdata->offset = pdata->offset_retry;
 					state = PTX_FIRE;
@@ -176,13 +177,16 @@ static int_t ptx_service(data_t *pdata, pdata_t praw, len_t len)
 	return result;
 }
 
-static void check_heartbeat(join_t *pj)
+static int check_heartbeat(join_t *pj)
 {
 	if (tline_out(tline_ms(), m_client.heartbeat_wait, NRF24_HEARTBEAT_TIMEOUT_MS)) {
 		disconnect();
-	} else if (!m_client.heartbeat && tline_out(tline_ms(), m_client.heartbeat_wait, NRF24_HEARTBEAT_SEND_MS)) {
-		data_t data;
+		errno = EBADF;
+		return ERROR;
+	}
 
+	if (!m_client.heartbeat && tline_out(tline_ms(), m_client.heartbeat_wait, NRF24_HEARTBEAT_SEND_MS)) {
+		data_t data;
 		pj->version.major = m_pversion->major;
 		pj->version.minor = m_pversion->minor;
 		pj->version.packet_size = m_pversion->packet_size;
@@ -192,8 +196,12 @@ static void check_heartbeat(join_t *pj)
 		if (ptx_service(build_data(&data, m_client.pipe, m_client.net_addr, NRF24_HEARTBEAT), pj, sizeof(join_t)) == SUCCESS) {
 			m_client.heartbeat_wait = tline_ms();
 			m_client.heartbeat = true;
+		} else {
+			return ERROR;
 		}
 	}
+
+	return SUCCESS;
 }
 
 static int_t prx_service(byte_t *buffer, len_t length)
@@ -203,7 +211,6 @@ static int_t prx_service(byte_t *buffer, len_t length)
 	byte_t pipe,
 				msg_type;
 	int_t		len;
-
 
 	for (pipe=nrf24l01_prx_pipe_available(); pipe!=NRF24L01_NO_PIPE; pipe=nrf24l01_prx_pipe_available()) {
 		len = nrf24l01_prx_data(&data, sizeof(data));
@@ -263,8 +270,7 @@ static int_t prx_service(byte_t *buffer, len_t length)
 		}
 	}
 
-	check_heartbeat(&data.msg.join);
-	return 0;
+	return check_heartbeat(&data.msg.join);
 }
 
 static int_t clireq_read(uint16_t net_addr, join_t *pj, tline_t *pt)
@@ -389,6 +395,7 @@ int_t nrf24l01_client_open(int_t socket, byte_t channel, version_t *pversion)
 
 	ret = join_local();
 	if (ret == PRX) {
+		errno = 0;
 		return SUCCESS;
 	}
 
@@ -418,7 +425,7 @@ int_t nrf24l01_client_close(int_t socket)
 	}
 	m_fd = SOCKET_INVALID;
 	m_pversion = NULL;
-
+	errno = 0;
 	return SUCCESS;
 }
 

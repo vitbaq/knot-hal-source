@@ -131,9 +131,7 @@ static int nrf24_listen(int socket, int channel, const void *paddr, size_t laddr
 	}
 
 	result = nrf24l01_server_open(socket, channel, &m_version, paddr, laddr);
-	if (result == SUCCESS) {
-		m_state = SERVER;
-	}
+	m_state = SERVER;
 	return  result;
 #else
 	errno = EPERM;
@@ -161,9 +159,7 @@ static int nrf24_connect(int socket, const void *addr, size_t len)
 	}
 
 	result = nrf24l01_client_open(socket, *((int*)addr), &m_version);
-	if (result == SUCCESS) {
-		m_state = CLIENT;
-	}
+	m_state = CLIENT;
 	return  result;
 }
 

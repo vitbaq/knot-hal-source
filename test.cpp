@@ -21,6 +21,7 @@ int main(void)
 {
 	int sock;
 	int channel = 10;
+	bool connected = false;
 	ssize_t nbytes;
 	char buffer[PACKET_SIZE_MAX];
 
@@ -31,28 +32,36 @@ int main(void)
 
 	nrf24l01_driver.probe(PACKET_SIZE_MAX);
 
-	sock = nrf24l01_driver.socket();
-	if (sock == ERROR) {
-		fprintf(stderr, "socket(%d): %s\n", errno, strerror(errno));
-		nrf24l01_driver.remove();
-		return 1;
-	}
+	fprintf(stdout, "NRF24L01 uploaded OK\n");
 
-	if (nrf24l01_driver.connect(sock, &channel, sizeof(channel)) == ERROR) {
-		fprintf(stderr, "listen(%d): %s\n", errno, strerror(errno));
-		nrf24l01_driver.close(sock);
-		nrf24l01_driver.remove();
-		return 2;
-	}
-
-	fprintf(stdout, "Connect(%d): %s\n", errno, strerror(errno));
 	while(!m_bbreak) {
-		nbytes = nrf24l01_driver.read(sock, buffer, sizeof(buffer));
-		printf("nbytes=%ld\n", nbytes);
+		if (!connected) {
+			sock = nrf24l01_driver.socket();
+			if (sock == ERROR) {
+				fprintf(stderr, "socket(%d): %s\n", errno, strerror(errno));
+				nrf24l01_driver.remove();
+			}
+			fprintf(stdout, "Client connecting...\n");
+			if (nrf24l01_driver.connect(sock, &channel, sizeof(channel)) == ERROR) {
+				fprintf(stderr, " connect(%d): %s\n", errno, strerror(errno));
+				nrf24l01_driver.close(sock);
+			} else {
+				fprintf(stdout, " connect(%d): %s\n", errno, strerror(errno));
+				connected = true;
+			}
+		} else {
+			nbytes = nrf24l01_driver.read(sock, buffer, sizeof(buffer));
+			if (nbytes < 0) {
+				nrf24l01_driver.close(sock);
+				connected = false;
+			}
+			printf("nbytes=%ld\n", nbytes);
+		}
 		sleep(1);
 	}
 
 	nrf24l01_driver.remove();
-	fprintf(stdout, "Finished\n");
+	fprintf(stdout, "Client finished.\n");
+
 	return 0;
 }

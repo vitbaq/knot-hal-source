@@ -56,12 +56,11 @@ static guint	watch_id;
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
-	char msg[32];
+	char msg[PACKET_SIZE_MAX];
 	session_t *ps = user_data;
 	ssize_t nbytes;
 	int sock;
 
-	fprintf(stderr, "node_io_watch: cond=%#04x\n", cond);
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
 		return FALSE;
 	}
@@ -92,10 +91,10 @@ static void node_io_destroy(gpointer user_data)
 {
 	session_t *ps = user_data;
 
-	fprintf(stdout, "disconnected\n");
-
 	/* session reference release */
 	session_release(ps);
+
+	fprintf(stdout, "disconnected\n");
 }
 
 static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
@@ -105,7 +104,6 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	int sockfd, srv_sock;
 	session_t *ps;
 
-	fprintf(stderr, "accept(): %d\n", cond);
 	if (cond & (G_IO_NVAL | G_IO_HUP | G_IO_ERR)) {
 		return FALSE;
 	}
@@ -117,7 +115,6 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 		return FALSE;
 	}
 
-	fprintf(stdout, "accepted socfd=%d\n", sockfd);
 	ps = g_new0(session_t, 1);
 	if(ps == NULL)
 	{
@@ -147,8 +144,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	/* Keep only one ref: GIOChannel watch */
 	g_io_channel_unref(node_io);
 
-	fprintf(stdout, "connected\n");
-
+	fprintf(stdout, "connected(%d)\n", sockfd);
 	return TRUE;
 }
 
@@ -190,6 +186,8 @@ static int start_server(void)
 	watch_id = g_io_add_watch(sock_io, cond, accept_cb, NULL);
 	/* Keep only one ref: server watch  */
 	g_io_channel_unref(sock_io);
+
+	fprintf(stdout, "Server is listening(%d)\n", sock);
 	return 0;
 }
 
@@ -211,7 +209,7 @@ int main(int argc, char *argv[])
 {
 	int result;
 
-	fprintf(stdout, "NRF24 Server starting...\n");
+	fprintf(stdout, "Server starting...\n");
 
 	result = start_server();
 	if (result == 0) {
@@ -224,7 +222,7 @@ int main(int argc, char *argv[])
 
 		stop_server();
 
-		fprintf(stdout, "NRF24 Server finished.\n");
+		fprintf(stdout, "Server finished.\n");
 	}
 
 	return result;
