@@ -33,10 +33,15 @@ enum {
 	NRF24_EOVERFLOW
 };
 
+#define XMNMASK		0b11110000				// mask to transmission number
+#define MSGMASK		0b00001111				// mask to network messsage
+#define MSGXMN_SET(m,x)	((((x) << 4) & XMNMASK) | ((m) & MSGMASK))
+#define MSG_GET(v)					((v) & MSGMASK)
+
 // network retransmiting parameters
 #define NRF24_TIMEOUT_MS								(NRF24L01_ARD_MAX * NRF24L01_ARC_MAX)
-#define NRF24_HEARTBEAT_SEND_MS			1000
-#define NRF24_HEARTBEAT_TIMEOUT_MS		(NRF24_HEARTBEAT_SEND_MS * 2)
+#define NRF24_HEARTBEAT_SEND_MS			2000
+#define NRF24_HEARTBEAT_TIMEOUT_MS		(NRF24_HEARTBEAT_SEND_MS * 3)
 #define NRF24_RETRIES											200
 
 // constant time values
@@ -60,7 +65,7 @@ enum {
  */
 typedef struct __attribute__ ((packed)) {
 	uint16_t		net_addr;
-	uint8_t		msg_type;
+	uint8_t		msg_xmn;
 } hdr_t;
 
 // Network message size parameters

@@ -12,11 +12,6 @@
 //#define TRACE_ALL
 #include "debug.h"
 
-#ifndef ARDUINO
-#define srandom(value) srand((unsigned int)value);
-#define random(value)	rand()
-#endif
-
 static enum {
 	UNKNOWN,
 	REQUEST,
@@ -44,7 +39,9 @@ typedef struct {
 	uint32_t	hashid;
 	ulong_t	heartbeat_wait;
 	byte_t		pipe,
-					heartbeat;
+					heartbeat,
+					rxmn,
+					txmn;
 } client_t;
 
 typedef struct {
@@ -65,9 +62,9 @@ static int_t get_random_value(int_t interval, int_t ntime, int_t min)
 	int_t value;
 
 	value = (9973 * ~ tline_us()) + ((value) % 701);
-	srandom(value);
+	srand(value);
 
-	value = (random() % interval) * ntime;
+	value = (rand() % interval) * ntime;
 	if (value < 0) {
 		value *= -1;
 		value = (value % interval) * ntime;
@@ -80,7 +77,6 @@ static int_t get_random_value(int_t interval, int_t ntime, int_t min)
 
 static void disconnect(void)
 {
-	TRACE("Client leaves this channel #%d\n", nrf24l01_get_channel());
 	nrf24l01_set_standby();
 	nrf24l01_close_pipe(0);
 	memset(&m_client, 0, sizeof(m_client));
@@ -89,7 +85,7 @@ static void disconnect(void)
 	m_pversion = NULL;
 }
 
-static data_t *build_data(data_t *pd, uint8_t pipe, uint16_t net_addr, uint8_t msg_type)
+static data_t *build_data(data_t *pd, byte_t pipe, uint16_t net_addr, byte_t msg_type)
 {
 	pd->msg_type = msg_type;
 	pd->pipe = pipe;
@@ -100,39 +96,41 @@ static data_t *build_data(data_t *pd, uint8_t pipe, uint16_t net_addr, uint8_t m
 	return pd;
 }
 
-static int_t send_data(data_t *pd, pdata_t praw, len_t len)
+static int_t send_data(data_t *pdata, pdata_t praw, len_t len)
 {
 	payload_t payload;
+	byte_t msg_type;
 
-	if (pd->msg_type == NRF24_APP && len > NRF24_PW_MSG_SIZE) {
-		if (pd->offset == 0) {
-			payload.hdr.msg_type = NRF24_APP_FIRST;
+	if (pdata->msg_type == NRF24_APP && len > NRF24_PW_MSG_SIZE) {
+		if (pdata->offset == 0) {
+			msg_type = NRF24_APP_FIRST;
 			len = NRF24_PW_MSG_SIZE;
 		} else {
-			len -= pd->offset;
+			len -= pdata->offset;
 			if (len > NRF24_PW_MSG_SIZE) {
-				payload.hdr.msg_type = NRF24_APP_FRAG;
+				msg_type = NRF24_APP_FRAG;
 				len = NRF24_PW_MSG_SIZE;
 			} else {
-				payload.hdr.msg_type = NRF24_APP_LAST;
+				msg_type = NRF24_APP_LAST;
 			}
 		}
 	} else {
-		payload.hdr.msg_type = pd->msg_type;
+		msg_type = pdata->msg_type;
 	}
-	payload.hdr.net_addr = pd->net_addr;
-	memcpy(payload.msg.raw, (((byte_t*)praw) + pd->offset), len);
-	pd->offset_retry = pd->offset;
-	pd->offset += len;
-	DUMP_DATA("SEND: ", pd->pipe, &payload, len + sizeof(hdr_t));
-	nrf24l01_set_ptx(pd->pipe);
-	nrf24l01_ptx_data(&payload, len + sizeof(hdr_t), pd->pipe != BROADCAST);
+	payload.hdr.msg_xmn = MSGXMN_SET(msg_type, pdata->pipe != BROADCAST ? m_client.txmn : 0);
+	payload.hdr.net_addr = pdata->net_addr;
+	memcpy(payload.msg.raw, (((byte_t*)praw) + pdata->offset), len);
+	pdata->offset_retry = pdata->offset;
+	pdata->offset += len;
+	DUMP_DATA("SEND: ", pdata->pipe, &payload, len + sizeof(hdr_t));
+	nrf24l01_set_ptx(pdata->pipe);
+	nrf24l01_ptx_data(&payload, len + sizeof(hdr_t), pdata->pipe != BROADCAST);
 	len = nrf24l01_ptx_wait_datasent();
 	nrf24l01_set_prx();
 	return len;
 }
 
-static int_t ptx_service(data_t *pd, pdata_t praw, len_t len)
+static int_t ptx_service(data_t *pdata, pdata_t praw, len_t len)
 {
 	int	state = PTX_FIRE,
 			result = SUCCESS;
@@ -152,19 +150,25 @@ static int_t ptx_service(data_t *pd, pdata_t praw, len_t len)
 			state = PTX;
 			/* No break; fall through intentionally */
 		case PTX:
-			result = send_data(pd, praw, len);
+			result = send_data(pdata, praw, len);
 			if (result != SUCCESS) {
-				if (--pd->retry == 0) {
-					TERROR("Failed to send message to the pipe#%d\n", pd->pipe);
+				if (--pdata->retry == 0) {
+					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
 					disconnect();
 				} else {
-					pd->offset = pd->offset_retry;
+					pdata->offset = pdata->offset_retry;
 					state = PTX_FIRE;
 				}
-			} else 	if (len != pd->offset) {
-				state = PTX_FIRE;
-			} else if (!m_client.heartbeat) {
-				m_client.heartbeat_wait = tline_ms();
+			} else {
+				if (pdata->pipe != BROADCAST) {
+					if (!m_client.heartbeat) {
+						m_client.heartbeat_wait = tline_ms();
+					}
+					++m_client.txmn;
+				}
+				if (len != pdata->offset) {
+					state = PTX_FIRE;
+				}
 			}
 			break;
 		}
@@ -196,15 +200,19 @@ static int_t prx_service(byte_t *buffer, len_t length)
 {
 	static int16_t	offset = 0;
 	payload_t	data;
-	int	pipe,
-			len;
+	byte_t pipe,
+				msg_type;
+	int_t		len;
+
 
 	for (pipe=nrf24l01_prx_pipe_available(); pipe!=NRF24L01_NO_PIPE; pipe=nrf24l01_prx_pipe_available()) {
 		len = nrf24l01_prx_data(&data, sizeof(data));
 		if (len > sizeof(data.hdr)) {
+			pipe = m_client.pipe;
 			DUMP_DATA("RECV: ", pipe, &data, len);
 			len -= sizeof(data.hdr);
-			switch (data.hdr.msg_type) {
+			msg_type = MSG_GET(data.hdr.msg_xmn);
+			switch (msg_type) {
 			case NRF24_HEARTBEAT:
 				if (len != sizeof(join_t) ||
 					data.msg.join.data != pipe ||
@@ -212,6 +220,9 @@ static int_t prx_service(byte_t *buffer, len_t length)
 					data.msg.join.version.minor != m_pversion->minor ||
 					data.msg.join.version.packet_size != m_pversion->packet_size) {
 					break;
+				}
+				if (MSGXMN_SET(msg_type, m_client.rxmn)  == data.hdr.msg_xmn) {
+					++m_client.rxmn;
 				}
 				m_client.heartbeat_wait = tline_ms();
 				m_client.heartbeat = false;
@@ -225,11 +236,13 @@ static int_t prx_service(byte_t *buffer, len_t length)
 				/* No break; fall through intentionally */
 			case NRF24_APP_LAST:
 			case NRF24_APP:
-				if (m_client.pipe == pipe && m_client.net_addr == data.hdr.net_addr) {
+				if (m_client.pipe == pipe && m_client.net_addr == data.hdr.net_addr &&
+					(MSGXMN_SET(msg_type, m_client.rxmn)  == data.hdr.msg_xmn)) {
+					++m_client.rxmn;
 					if (!m_client.heartbeat) {
 						m_client.heartbeat_wait = tline_ms();
 					}
-					if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_FIRST) {
+					if (data.hdr.msg_xmn == NRF24_APP || data.hdr.msg_xmn == NRF24_APP_FIRST) {
 						offset = 0;
 					}
 					if ((offset + len) <= m_pversion->packet_size) {
@@ -240,7 +253,7 @@ static int_t prx_service(byte_t *buffer, len_t length)
 							memcpy(buffer + offset, &data.msg.raw, len);
 							offset += len;
 						}
-						if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_LAST) {
+						if (data.hdr.msg_xmn == NRF24_APP || data.hdr.msg_xmn == NRF24_APP_LAST) {
 							return offset;
 						}
 					}
@@ -265,7 +278,7 @@ static int_t clireq_read(uint16_t net_addr, join_t *pj, tline_t *pt)
 		DUMP_DATA("RECV: ", pipe, &data, len > sizeof(data.hdr) ? len : 0);
 		if (len == (sizeof(data.hdr)+sizeof(data.msg.join)) && pipe == BROADCAST &&
 			data.hdr.net_addr == net_addr && data.msg.join.hashid == pj->hashid &&
-			data.hdr.msg_type == NRF24_JOIN_LOCAL) {
+			MSG_GET(data.hdr.msg_xmn) == NRF24_JOIN_LOCAL) {
 			if (data.msg.result != NRF24_SUCCESS) {
 				return (data.msg.result == NRF24_EUSERS ? USERS : OVERFLOW);
 			}

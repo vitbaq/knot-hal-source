@@ -51,6 +51,7 @@ typedef struct {
 } session_t;
 
 static GMainLoop *main_loop;
+static guint	watch_id;
 
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
@@ -60,6 +61,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 	ssize_t nbytes;
 	int sock;
 
+	fprintf(stderr, "node_io_watch: cond=%#04x\n", cond);
 	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
 		return FALSE;
 	}
@@ -185,7 +187,7 @@ static int start_server(void)
 	g_io_channel_set_flags(sock_io, G_IO_FLAG_NONBLOCK, NULL);
 
 	/* Use node_ops as parameter to allow multi drivers */
-	g_io_add_watch(sock_io, cond, accept_cb, NULL);
+	watch_id = g_io_add_watch(sock_io, cond, accept_cb, NULL);
 	/* Keep only one ref: server watch  */
 	g_io_channel_unref(sock_io);
 	return 0;
@@ -193,6 +195,9 @@ static int start_server(void)
 
 static void stop_server(void)
 {
+	if (watch_id != 0) {
+		g_source_remove(watch_id);
+	}
 	nrf24l01_driver.remove();
 }
 

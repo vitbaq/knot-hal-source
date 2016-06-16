@@ -10,7 +10,7 @@
 
 #include "nrf24l01_server.h"
 
-#define TRACE_ALL
+//#define TRACE_ALL
 #include "debug.h"
 
 #define NEXT_CH	2
@@ -50,6 +50,9 @@ typedef struct  {
 					packet_size;
 	uint32_t	hashid;
 	ulong_t	heartbeat_wait;
+	guint		watch_id;
+	byte_t		rxmn,
+					txmn;
 	data_t		*rxmsg;
 } client_t;
 
@@ -111,16 +114,20 @@ static inline client_t *get_client(payload_t *ppl)
 
 static inline void client_disconnect(client_t *pc)
 {
-	close(pc->fdsock);
-	pc->fdsock = SOCKET_INVALID;
+	TRACE(" IN\n");
+	if (pc != NULL && pc->watch_id != 0) {
+		g_source_remove(pc->watch_id);
+		TRACE("watch = %d\n", pc->watch_id);
+		pc->watch_id = 0;
+	}
 }
 
 static void client_free(client_t *pc)
 {
 	data_t *pdata, *pnext;
 
-	client_disconnect(pc);
-	set_pipe(pc->pipe, NULL);
+	TRACE("close(%d) pipe=%d packet=%d\n", pc->fdsock, pc->pipe, pc->packet_size);
+	close(pc->fdsock);
 	g_free(pc->rxmsg);
 	G_LOCK(m_ptxlist);
 	list_for_each_entry_safe(pdata, pnext, &m_ptxlist, node) {
@@ -130,11 +137,13 @@ static void client_free(client_t *pc)
 		}
 	}
 	G_UNLOCK(m_ptxlist);
+	set_pipe(pc->pipe, NULL);
 	g_free(pc);
 }
 
 static void client_close(gpointer pentry, gpointer user_data)
 {
+	TRACE(" IN\n");
 	client_disconnect((client_t*)pentry);
 }
 
@@ -200,27 +209,29 @@ static data_t *build_data(int pipe, int net_addr, int msg_type, pdata_t praw, le
 	return msg;
 }
 
-static int send_data(data_t *pdata)
+static int send_data(data_t *pdata, client_t *pc)
 {
 	payload_t payload;
 	int len = pdata->len;
+	byte_t msg_type;
 
 	if (pdata->msg_type == NRF24_APP && len > NRF24_PW_MSG_SIZE) {
 		if (pdata->offset == 0) {
-			payload.hdr.msg_type = NRF24_APP_FIRST;
+			msg_type = NRF24_APP_FIRST;
 			len = NRF24_PW_MSG_SIZE;
 		} else {
 			len -= pdata->offset;
 			if (len > NRF24_PW_MSG_SIZE) {
-				payload.hdr.msg_type = NRF24_APP_FRAG;
+				msg_type = NRF24_APP_FRAG;
 				len = NRF24_PW_MSG_SIZE;
 			} else {
-				payload.hdr.msg_type = NRF24_APP_LAST;
+				msg_type = NRF24_APP_LAST;
 			}
 		}
 	} else {
-		payload.hdr.msg_type = pdata->msg_type;
+		msg_type = pdata->msg_type;
 	}
+	payload.hdr.msg_xmn = MSGXMN_SET(msg_type, pc != NULL ? pc->txmn : 0);
 	payload.hdr.net_addr = pdata->net_addr;
 	memcpy(payload.msg.raw, pdata->raw + pdata->offset, len);
 	pdata->offset_retry = pdata->offset;
@@ -247,6 +258,7 @@ static int ptx_service(void)
 		static ulong_t	start = 0,
 									delay = 0;
 		static data_t		*pdata = NULL;
+		static client_t	*pc = NULL;
 
 		switch (send_state) {
 		case  PTX_FIRE:
@@ -265,25 +277,29 @@ static int ptx_service(void)
 			pdata = list_first_entry(&m_ptxlist, data_t, node);
 			list_del_init(&pdata->node);
 			G_UNLOCK(m_ptxlist);
-			if (send_data(pdata) != SUCCESS) {
+			pc = get_pipe(pdata->pipe);
+			if (send_data(pdata, pc) != SUCCESS) {
 				if (--pdata->retry == 0) {
 					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
-					if (get_pipe(pdata->pipe) != NULL) {
-						client_disconnect(get_pipe(pdata->pipe));
-					}
+					client_disconnect(pc);
 					g_free(pdata);
 				} else {
 					pdata->offset = pdata->offset_retry;
 					put_ptx_queue(pdata);
+					TRACE("Resend(%d) message to the pipe#%d\n", pdata->retry, pdata->pipe);
 				}
-			} else 	if (pdata->len != pdata->offset) {
-				TRACE("Message fragment sent to the pipe#%d len=%d\n", pdata->pipe, pdata->len);
-				put_ptx_queue(pdata);
 			} else {
-				if (get_pipe(pdata->pipe) != NULL) {
-					get_pipe(pdata->pipe)->heartbeat_wait = tline_ms();
+				if (pc != NULL) {
+					pc->heartbeat_wait = tline_ms();
+					++pc->txmn;
 				}
-				g_free(pdata);
+				if (pdata->len != pdata->offset) {
+					TRACE("Message fragment sent to the pipe#%d len=%d\n", pdata->pipe, pdata->len);
+					put_ptx_queue(pdata);
+				} else {
+					g_free(pdata);
+					TRACE("Message sent to the pipe#%d\n", pdata->pipe);
+				}
 			}
 			send_state = PTX_FIRE;
 			break;
@@ -388,7 +404,7 @@ static int set_new_client(payload_t *ppl, int len)
 	m_pclients = g_slist_append(m_pclients, pc);
 
 	/* Watch for unix socket disconnection */
-	g_io_add_watch_full(sock_io, G_PRIORITY_DEFAULT,
+	pc->watch_id = g_io_add_watch_full(sock_io, G_PRIORITY_DEFAULT,
 				G_IO_HUP | G_IO_NVAL | G_IO_ERR | G_IO_IN,
 				client_watch, pc, client_destroy);
 	/* Keep only one ref: GIOChannel watch */
@@ -401,6 +417,7 @@ static int set_new_client(payload_t *ppl, int len)
 static void check_heartbeat(gpointer pentry, gpointer user_data)
 {
 	if (tline_out(tline_ms(), ((client_t*)pentry)->heartbeat_wait, NRF24_HEARTBEAT_TIMEOUT_MS)) {
+		TRACE(" IN\n");
 		client_disconnect((client_t*)pentry);
 	}
 }
@@ -411,17 +428,19 @@ static int prx_service(void)
 	int	pipe,
 			len;
 	client_t *pc;
+	int msg_type;
 
 	for (pipe=nrf24l01_prx_pipe_available(); pipe!=NRF24L01_NO_PIPE; pipe=nrf24l01_prx_pipe_available()) {
 		len = nrf24l01_prx_data(&data, sizeof(data));
 		if (len > sizeof(data.hdr)) {
 			DUMP_DATA("RECV: ", pipe, &data, len);
 			len -= sizeof(data.hdr);
-			switch (data.hdr.msg_type) {
+			msg_type = MSG_GET(data.hdr.msg_xmn);
+			switch (msg_type) {
 			case NRF24_GATEWAY_REQ:
 				if (len == sizeof(data.msg.result) && pipe == BROADCAST) {
 					data.msg.result = NRF24_ECONNREFUSED;
-					put_ptx_queue(build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
+					put_ptx_queue(build_data(pipe, data.hdr.net_addr, msg_type, data.msg.raw, len, NULL));
 				}
 				break;
 
@@ -438,7 +457,7 @@ static int prx_service(void)
 					data.msg.join.data = set_new_client(&data, len);
 					data.msg.join.result = (data.msg.join.data != NRF24L01_NO_PIPE) ? NRF24_SUCCESS : NRF24_EUSERS;
 				}
-				put_ptx_queue(build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
+				put_ptx_queue(build_data(pipe, data.hdr.net_addr, msg_type, data.msg.raw, len, NULL));
 				break;
 
 			case NRF24_UNJOIN_LOCAL:
@@ -449,13 +468,12 @@ static int prx_service(void)
 					data.msg.join.version.packet_size > m_pversion->packet_size) {
 					break;
 				}
-				TRACE("NRF24_UNJOIN_LOCAL pipe=%d packet size=%d\n", pipe, m_pversion->packet_size);
 				pc = get_client(&data);
-				if (pc != NULL) {
-					TRACE("NRF24_UNJOIN_LOCAL disconnect\n");
+				if (pc != NULL && (MSGXMN_SET(msg_type, pc->rxmn)  == data.hdr.msg_xmn)) {
+					++pc->rxmn;
+					TRACE(" IN\n");
 					client_disconnect(pc);
 				}
-				TRACE("NRF24_UNJOIN_LOCAL out\n");
 				break;
 
 			case NRF24_HEARTBEAT:
@@ -468,12 +486,13 @@ static int prx_service(void)
 				}
 				pc = get_client(&data);
 				if (pc != NULL) {
+					if (MSGXMN_SET(msg_type, pc->rxmn)  == data.hdr.msg_xmn) {
+						++pc->rxmn;
+						data.msg.join.result = NRF24_SUCCESS;
+						put_ptx_queue(build_data(pipe, data.hdr.net_addr, msg_type, data.msg.raw, len, NULL));
+					}
 					pc->heartbeat_wait = tline_ms();
-					data.msg.join.result = NRF24_SUCCESS;
-				} else {
-					data.msg.join.result = NRF24_ECONNREFUSED;
 				}
-				put_ptx_queue(build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, NULL));
 				break;
 
 			case NRF24_APP_FIRST:
@@ -485,10 +504,12 @@ static int prx_service(void)
 			case NRF24_APP_LAST:
 			case NRF24_APP:
 				pc = get_pipe(pipe);
-				if (pc != NULL && pc->pipe == pipe && pc->net_addr == data.hdr.net_addr) {
+				if (pc != NULL && pc->pipe == pipe && pc->net_addr == data.hdr.net_addr &&
+					 (MSGXMN_SET(msg_type, pc->rxmn)  == data.hdr.msg_xmn)) {
 					int size;
+					++pc->rxmn;
 					pc->heartbeat_wait = tline_ms();
-					if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_FIRST) {
+					if (msg_type == NRF24_APP || msg_type == NRF24_APP_FIRST) {
 						g_free(pc->rxmsg);
 						pc->rxmsg = NULL;
 						size = len;
@@ -496,8 +517,8 @@ static int prx_service(void)
 						size = pc->rxmsg->len + len;
 					}
 					if (size <= pc->packet_size && size <= m_pversion->packet_size) {
-						pc->rxmsg = build_data(pipe, data.hdr.net_addr, data.hdr.msg_type, data.msg.raw, len, pc->rxmsg);
-						if (data.hdr.msg_type == NRF24_APP || data.hdr.msg_type == NRF24_APP_LAST) {
+						pc->rxmsg = build_data(pipe, data.hdr.net_addr, msg_type, data.msg.raw, len, pc->rxmsg);
+						if (msg_type == NRF24_APP || msg_type == NRF24_APP_LAST) {
 							write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
 							g_free(pc->rxmsg);
 							pc->rxmsg = NULL;
@@ -532,7 +553,7 @@ static int gwreq_read(ulong_t start, ulong_t timeout)
 		len = nrf24l01_prx_data(&data, sizeof(data));
 		DUMP_DATA("RECV: ", pipe, &data, len > sizeof(data.hdr) ? len : 0);
 		if (len == (sizeof(data.hdr)+sizeof(data.msg.result)) && pipe == BROADCAST &&
-			data.hdr.msg_type == NRF24_GATEWAY_REQ &&
+			MSG_GET(data.hdr.msg_xmn) == NRF24_GATEWAY_REQ &&
 			data.msg.result == NRF24_ECONNREFUSED) {
 			return REFUSED;
 		}
@@ -561,7 +582,7 @@ static int gwreq(bool reset)
 	case REQUEST:
 		delay = get_random_value(SEND_RANGE_MS, SEND_FACTOR, SEND_RANGE_MS_MIN);
 		TRACE("Server joins ch#%d retry=%d/%d delay=%ld\n", ch, m_gwreq->net_addr, m_gwreq->retry, delay);
-		send_data(m_gwreq);
+		send_data(m_gwreq, NULL);
 		m_gwreq->offset = 0;
 		start = tline_ms();
 		state = PENDING;
