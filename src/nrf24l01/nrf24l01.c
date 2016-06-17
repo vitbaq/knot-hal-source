@@ -552,8 +552,8 @@ result_t nrf24l01_set_ptx(byte_t pipe_addr)
 	set_address_pipe(TX_ADDR, pipe_addr);
 #if (NRF24L01_ARC != ARC_DISABLE)
 	// set ARC and ARD by pipe index to different retry periods to reduce data collisions
-	// compute ARD range: 1000us <= ARD[pipe] <= 3000us
-	outr(SETUP_RETR, RETR_ARD(((pipe_addr *2) + 1)) | RETR_ARC(NRF24L01_ARC));
+	// compute ARD range: 1500us <= ARD[pipe] <= 4000us
+	outr(SETUP_RETR, RETR_ARD(((pipe_addr * 2) + 5)) | RETR_ARC(NRF24L01_ARC));
 #endif
 	outr(STATUS, ST_TX_DS | ST_MAX_RT);
 	outr(CONFIG, inr(CONFIG) & ~CFG_PRIM_RX);

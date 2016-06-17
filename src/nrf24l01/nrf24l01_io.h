@@ -64,6 +64,7 @@
 #define RETR_ARD(v)				((v << 4) & RETR_ARD_MASK)	// write Auto Retransmit delay: 0 <= v <= 15 valid values
 																													// for delays respectively: 250us, 500us, 750us ... 4000us
 #define RETR_ARD_RD(v)		((v & RETR_ARD_MASK) >> 4)	// read
+#define ARD_FACTOR_US		250
 #define ARD_250US					0b0000
 #define ARD_500US					0b0001
 #define ARD_750US					0b0010

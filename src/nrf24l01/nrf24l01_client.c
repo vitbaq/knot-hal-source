@@ -155,7 +155,7 @@ static int_t ptx_service(data_t *pdata, pdata_t praw, len_t len)
 				if (--pdata->retry == 0) {
 					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
 					disconnect();
-					errno = EBADF;
+					errno = ETIMEDOUT;
 				} else {
 					pdata->offset = pdata->offset_retry;
 					state = PTX_FIRE;
@@ -168,6 +168,7 @@ static int_t ptx_service(data_t *pdata, pdata_t praw, len_t len)
 					++m_client.txmn;
 				}
 				if (len != pdata->offset) {
+					pdata->retry = SEND_RETRY;
 					state = PTX_FIRE;
 				}
 			}
@@ -181,7 +182,7 @@ static int check_heartbeat(join_t *pj)
 {
 	if (tline_out(tline_ms(), m_client.heartbeat_wait, NRF24_HEARTBEAT_TIMEOUT_MS)) {
 		disconnect();
-		errno = EBADF;
+		errno = ETIMEDOUT;
 		return ERROR;
 	}
 
@@ -230,9 +231,9 @@ static int_t prx_service(byte_t *buffer, len_t length)
 				}
 				if (MSGXMN_SET(msg_type, m_client.rxmn)  == data.hdr.msg_xmn) {
 					++m_client.rxmn;
+					m_client.heartbeat_wait = tline_ms();
+					m_client.heartbeat = false;
 				}
-				m_client.heartbeat_wait = tline_ms();
-				m_client.heartbeat = false;
 				break;
 
 			case NRF24_APP_FIRST:
@@ -249,7 +250,7 @@ static int_t prx_service(byte_t *buffer, len_t length)
 					if (!m_client.heartbeat) {
 						m_client.heartbeat_wait = tline_ms();
 					}
-					if (data.hdr.msg_xmn == NRF24_APP || data.hdr.msg_xmn == NRF24_APP_FIRST) {
+					if (msg_type == NRF24_APP || msg_type == NRF24_APP_FIRST) {
 						offset = 0;
 					}
 					if ((offset + len) <= m_pversion->packet_size) {
@@ -260,7 +261,7 @@ static int_t prx_service(byte_t *buffer, len_t length)
 							memcpy(buffer + offset, &data.msg.raw, len);
 							offset += len;
 						}
-						if (data.hdr.msg_xmn == NRF24_APP || data.hdr.msg_xmn == NRF24_APP_LAST) {
+						if (msg_type == NRF24_APP || msg_type == NRF24_APP_LAST) {
 							return offset;
 						}
 					}

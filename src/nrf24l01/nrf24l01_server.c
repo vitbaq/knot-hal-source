@@ -251,7 +251,7 @@ static inline void put_ptx_queue(data_t *pd)
 	G_UNLOCK(m_ptxlist);
 }
 
-static int ptx_service(void)
+static void ptx_service(void)
 {
 	if (!list_empty(&m_ptxlist)) {
 		static int send_state = PTX_FIRE;
@@ -278,7 +278,9 @@ static int ptx_service(void)
 			list_del_init(&pdata->node);
 			G_UNLOCK(m_ptxlist);
 			pc = get_pipe(pdata->pipe);
-			if (send_data(pdata, pc) != SUCCESS) {
+			if (pc == NULL && pdata->pipe != BROADCAST) {
+				g_free(pdata);
+			} else if (send_data(pdata, pc) != SUCCESS) {
 				if (--pdata->retry == 0) {
 					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
 					client_disconnect(pc);
@@ -295,6 +297,7 @@ static int ptx_service(void)
 				}
 				if (pdata->len != pdata->offset) {
 					TRACE("Message fragment sent to the pipe#%d len=%d\n", pdata->pipe, pdata->len);
+					pdata->retry = SEND_RETRY;
 					put_ptx_queue(pdata);
 				} else {
 					g_free(pdata);
@@ -417,7 +420,6 @@ static int set_new_client(payload_t *ppl, int len)
 static void check_heartbeat(gpointer pentry, gpointer user_data)
 {
 	if (tline_out(tline_ms(), ((client_t*)pentry)->heartbeat_wait, NRF24_HEARTBEAT_TIMEOUT_MS)) {
-		TRACE(" IN\n");
 		client_disconnect((client_t*)pentry);
 	}
 }
@@ -485,12 +487,10 @@ static int prx_service(void)
 					break;
 				}
 				pc = get_client(&data);
-				if (pc != NULL) {
-					if (MSGXMN_SET(msg_type, pc->rxmn)  == data.hdr.msg_xmn) {
-						++pc->rxmn;
-						data.msg.join.result = NRF24_SUCCESS;
-						put_ptx_queue(build_data(pipe, data.hdr.net_addr, msg_type, data.msg.raw, len, NULL));
-					}
+				if (pc != NULL && MSGXMN_SET(msg_type, pc->rxmn)  == data.hdr.msg_xmn) {
+					++pc->rxmn;
+					data.msg.join.result = NRF24_SUCCESS;
+					put_ptx_queue(build_data(pipe, data.hdr.net_addr, msg_type, data.msg.raw, len, NULL));
 					pc->heartbeat_wait = tline_ms();
 				}
 				break;
@@ -529,11 +529,8 @@ static int prx_service(void)
 			}
 		}
 	}
-
-	g_slist_foreach(m_pclients, check_heartbeat, NULL);
-
 	ptx_service();
-
+	g_slist_foreach(m_pclients, check_heartbeat, NULL);
 	return PRX;
 }
 

@@ -33,21 +33,23 @@ enum {
 	NRF24_EOVERFLOW
 };
 
-#define XMNMASK		0b11110000				// mask to transmission number
-#define MSGMASK		0b00001111				// mask to network messsage
+#define XMNMASK						0b11110000				// mask to transmission number
+#define MSGMASK						0b00001111				// mask to network messsage
 #define MSGXMN_SET(m,x)	((((x) << 4) & XMNMASK) | ((m) & MSGMASK))
 #define MSG_GET(v)					((v) & MSGMASK)
 
 // network retransmiting parameters
-#define NRF24_TIMEOUT_MS								(NRF24L01_ARD_MAX * NRF24L01_ARC_MAX)
+#define NRF24_DELAY_MS									(((NRF24L01_ARD + 1) * NRF24L01_ARD_FACTOR_US)  / 1000)
+#define NRF24_TIMEOUT_MS								(NRF24_DELAY_MS * NRF24L01_ARC)
 #define NRF24_HEARTBEAT_SEND_MS			2000
 #define NRF24_HEARTBEAT_TIMEOUT_MS		(NRF24_HEARTBEAT_SEND_MS * 3)
 #define NRF24_RETRIES											200
 
-// constant time values
+// constant to SEND time values
+//	SEND_RANGE_MS_MIN <= SEND <= (SEND_RANGE_MS * SEND_FACTOR)
 #define SEND_FACTOR					1
-#define SEND_RANGE_MS_MIN	NRF24L01_ARD_MAX
-#define SEND_RANGE_MS				NRF24_TIMEOUT_MS	//SEND_RANGE_MS_MIN <= delay <= (SEND_RANGE_MS * SEND_FACTOR)
+#define SEND_RANGE_MS_MIN	NRF24_DELAY_MS
+#define SEND_RANGE_MS				NRF24_TIMEOUT_MS
 
 // constant retry values
 #define JOINREQ_RETRY	NRF24_RETRIES

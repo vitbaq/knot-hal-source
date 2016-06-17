@@ -36,18 +36,25 @@
 #include "abstract_driver.h"
 
 // application packet size maximum
-#define PACKET_SIZE_MAX		128
+#define PACKET_SIZE_MAX		86
 
 /* Abstract unit socket name space */
 #define KNOT_UNIX_SOCKET				"test_knot_nrf24l01"
 #define KNOT_UNIX_SOCKET_SIZE		(sizeof(KNOT_UNIX_SOCKET) - 1)
+
+#define MESSAGE				"GOD YZAL EHT REVO SPMUJ XOF NWORB KCIUQ EHT"
+#define MESSAGE_SIZE	(sizeof(MESSAGE)-1)
 
 /*
  * Device session storing the connected
  * device context: 'drivers' and file descriptors
  */
 typedef struct {
-	volatile int				ref;
+	volatile int		ref;
+	int					count,
+							inc,
+							size;
+	char				msg[PACKET_SIZE_MAX];
 } session_t;
 
 static GMainLoop *main_loop;
@@ -56,8 +63,7 @@ static guint	watch_id;
 static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 			      gpointer user_data)
 {
-	char msg[PACKET_SIZE_MAX],
-			 msg2[PACKET_SIZE_MAX];
+	char buffer[PACKET_SIZE_MAX];
 	session_t *ps = user_data;
 	ssize_t nbytes;
 	int sock;
@@ -68,15 +74,23 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	sock = g_io_channel_unix_get_fd(io);
 
-	nbytes = read(sock, msg, sizeof(msg));
+	fprintf(stdout, "SERVER:\n");
+	nbytes = read(sock, buffer, sizeof(buffer));
 	if (nbytes < 0) {
 		fprintf(stderr, "recv() error - %s(%d)\n", strerror(errno), errno);
 		return FALSE;
 	}
 
-	fprintf(stdout, " MSG(%ld)>> '%.*s'\n", nbytes, (int)nbytes, msg);
-	nbytes = sprintf(msg2, "%.*s %s", (int)nbytes, msg, "Pereira.");
-	write(sock, msg2, nbytes);
+	fprintf(stdout, "RX(%ld): '%.*s'\n", nbytes, (int)nbytes, buffer);
+
+	nbytes = sprintf(buffer, "%.*s", ps->count, ps->msg);
+	ps->inc = (ps->count == ps->size) ? -1 : (ps->count == 1 ? 1 : ps->inc);
+	ps->count += ps->inc;
+	if (write(sock, buffer, nbytes) < 0) {
+		return FALSE;
+	}
+
+	fprintf(stdout, "TX(%ld): '%.*s'\n", nbytes, (int)nbytes, buffer);
 	return TRUE;
 }
 
@@ -137,6 +151,13 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	/* Increments the reference count of session */
 	++ps->ref;
+	ps->count = MESSAGE_SIZE;
+	for (ps->size=0, ps->inc=MESSAGE_SIZE; ps->size<sizeof(ps->msg);) {
+		if ((ps->inc+ps->size) > sizeof(ps->msg)) {
+			ps->inc = sizeof(ps->msg) - ps->size;
+		}
+		ps->size += sprintf(ps->msg+ps->size, "%.*s", ps->inc, MESSAGE);
+	}
 
 	g_io_channel_set_close_on_unref(node_io, TRUE);
 
@@ -157,20 +178,23 @@ static int start_server(void)
 	GIOChannel *sock_io;
 	int sock;
 
-	nrf24l01_driver.probe(PACKET_SIZE_MAX);
+	if (nrf24l01_driver.probe(PACKET_SIZE_MAX) == ERROR) {
+		fprintf(stderr, "probe(%d): %s\n", errno, strerror(errno));
+		return 1;
+	}
 
 	sock = nrf24l01_driver.socket();
 	if (sock == ERROR) {
 		fprintf(stderr, "socket(%d): %s\n", errno, strerror(errno));
 		nrf24l01_driver.remove();
-		return 1;
+		return 2;
 	}
 
 	if (nrf24l01_driver.listen(sock, 10, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE) == ERROR) {
 		fprintf(stderr, "listen(%d): %s\n", errno, strerror(errno));
 		nrf24l01_driver.close(sock);
 		nrf24l01_driver.remove();
-		return 2;
+		return 3;
 	}
 
 	sock_io = g_io_channel_unix_new(sock);
@@ -179,7 +203,7 @@ static int start_server(void)
 		nrf24l01_driver.close(sock);
 		nrf24l01_driver.remove();
 		fprintf(stderr, "error - server channel creation failure\n");
-		return 3;
+		return 4;
 	}
 
 	g_io_channel_set_close_on_unref(sock_io, TRUE);
