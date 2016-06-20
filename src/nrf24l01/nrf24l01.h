@@ -41,18 +41,6 @@
 extern "C"{
 #endif
 
-//>>>>>>>>>>
-// TODO: functions to test, we can remove them on development end
-result_t nrf24l01_inr(byte_t reg);
-void nrf24l01_inr_data(byte_t reg, pdata_t pd, len_t len);
-void nrf24l01_outr(byte_t reg, byte_t value);
-void nrf24l01_outr_data(byte_t reg, pdata_t pd, len_t len);
-result_t nrf24l01_command(byte_t cmd);
-void nrf24l01_set_address_pipe(byte_t reg, byte_t pipe);
-result_t nrf24l01_ce_on(void);
-result_t nrf24l01_ce_off(void);
-//<<<<<<<<<<
-
 /*
 * nrf24l01_init - initialize the nRF24L01 device
 */
@@ -69,8 +57,11 @@ result_t nrf24l01_prx_data(pdata_t pdata, len_t len);
 result_t nrf24l01_set_ptx(byte_t pipe_addr);
 result_t nrf24l01_ptx_data(pdata_t pdata, len_t len, bool ack);
 result_t nrf24l01_ptx_wait_datasent(void);
-result_t nrf24l01_ptx_isempty(void);
-result_t nrf24l01_ptx_isfull(void);
+
+//#define DETAILS
+#ifdef DETAILS
+void nrf24l01_dump_details(void);
+#endif
 
 #ifdef __cplusplus
 } // extern "C"

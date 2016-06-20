@@ -34,9 +34,10 @@
 #include <glib.h>
 
 #include "abstract_driver.h"
+#include "util.h"
 
 // application packet size maximum
-#define PACKET_SIZE_MAX		86
+#define PACKET_SIZE_MAX		128
 
 /* Abstract unit socket name space */
 #define KNOT_UNIX_SOCKET				"test_knot_nrf24l01"
@@ -52,6 +53,7 @@
 typedef struct {
 	volatile int		ref;
 	int					count,
+							msg_count,
 							inc,
 							size;
 	char				msg[PACKET_SIZE_MAX];
@@ -81,7 +83,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		return FALSE;
 	}
 
-	fprintf(stdout, "RX(%ld): '%.*s'\n", nbytes, (int)nbytes, buffer);
+	fprintf(stdout, "RX(%d):[%03ld]: '%.*s'\n", sock, nbytes, (int)nbytes, buffer);
 
 	nbytes = sprintf(buffer, "%.*s", ps->count, ps->msg);
 	ps->inc = (ps->count == ps->size) ? -1 : (ps->count == 1 ? 1 : ps->inc);
@@ -90,7 +92,7 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 		return FALSE;
 	}
 
-	fprintf(stdout, "TX(%ld): '%.*s'\n", nbytes, (int)nbytes, buffer);
+	fprintf(stdout, "TX(%d):[%03ld]: %d -  '%.*s'\n", sock, nbytes, ++ps->msg_count, (int)nbytes, buffer);
 	return TRUE;
 }
 
@@ -151,13 +153,14 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 
 	/* Increments the reference count of session */
 	++ps->ref;
-	ps->count = MESSAGE_SIZE;
 	for (ps->size=0, ps->inc=MESSAGE_SIZE; ps->size<sizeof(ps->msg);) {
 		if ((ps->inc+ps->size) > sizeof(ps->msg)) {
 			ps->inc = sizeof(ps->msg) - ps->size;
 		}
 		ps->size += sprintf(ps->msg+ps->size, "%.*s", ps->inc, MESSAGE);
 	}
+	ps->count = get_random_value(ps->size, 1, 1);
+	ps->inc = 1;
 
 	g_io_channel_set_close_on_unref(node_io, TRUE);
 
@@ -178,19 +181,19 @@ static int start_server(void)
 	GIOChannel *sock_io;
 	int sock;
 
-	if (nrf24l01_driver.probe(PACKET_SIZE_MAX) == ERROR) {
+	if (nrf24l01_driver.probe(PACKET_SIZE_MAX) < 0) {
 		fprintf(stderr, "probe(%d): %s\n", errno, strerror(errno));
 		return 1;
 	}
 
 	sock = nrf24l01_driver.socket();
-	if (sock == ERROR) {
+	if (sock < 0) {
 		fprintf(stderr, "socket(%d): %s\n", errno, strerror(errno));
 		nrf24l01_driver.remove();
 		return 2;
 	}
 
-	if (nrf24l01_driver.listen(sock, 10, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE) == ERROR) {
+	if (nrf24l01_driver.listen(sock, 10, KNOT_UNIX_SOCKET, KNOT_UNIX_SOCKET_SIZE) < 0) {
 		fprintf(stderr, "listen(%d): %s\n", errno, strerror(errno));
 		nrf24l01_driver.close(sock);
 		nrf24l01_driver.remove();

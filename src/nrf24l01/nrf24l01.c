@@ -25,8 +25,6 @@
 #define TPECE2CSN		4				//4us
 #define TSTBY2A			130			//130us
 
-// *************heartbeat*************
-
 typedef struct {
 	uint8_t	enaa,
 					en_rxaddr,
@@ -63,10 +61,6 @@ static byte_t m_pipe0_addr = NRF24L01_PIPE0_ADDR;
 
 #define DELAY_US(us)		delayMicroseconds(us)
 #define DELAY_MS(ms)	delay(ms)
-
-/* ----------------------------------
- * Local operation functions
- */
 
 static inline void enable(void)
 {
@@ -143,31 +137,6 @@ static inline void io_reset()
 
 static volatile unsigned				*gpio;
 
-/* ----------------------------------
- * Local operation functions
- */
-
-//static int dump_data(void *pdata, int len)
-//{
-//    int i, off, col, n;
-//    unsigned char *pd = pdata;
-//    char buff[256];
-//
-//    for (off = n = 0; off < len; off += 16) {
-//        n = sprintf(buff, "\t [%04x]", off);
-//        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
-//            n += sprintf(buff + n, " %02lX", (ulong)pd[i]);
-//        // if (col != 0 && off != 0)
-//        for (; col != 0; --col)
-//            n += sprintf(buff + n, "   ");
-//        n += sprintf(buff + n, " - ");
-//        for (i = off, col = 16; col != 0 && i < len; --col, ++i)
-//            n += sprintf(buff + n, "%c", pd[i] >= ' ' && pd[i] < 0x7f ? pd[i] : '.');
-//        printf("%s\r\n", buff);
-//    }
-//    return 0;
-//}
-
 static inline void enable(void)
 {
 	GPIO_SET = (1<<CE);
@@ -216,6 +185,9 @@ static void io_reset()
 
 #endif		// ifdef (ARDUINO)
 
+/* ----------------------------------
+ * Local IO operation functions
+ */
 static inline result_t inr(byte_t reg)
 {
 	byte_t value = NOP;
@@ -257,6 +229,9 @@ static inline result_t command_data(byte_t cmd, pdata_t pd, len_t len)
 	return command(NOP);
 }
 
+/* ----------------------------------
+ * Local operation functions
+ */
 static void set_address_pipe(byte_t reg, byte_t pipe_addr)
 {
 	uint64_t	addr = (pipe_addr == NRF24L01_PIPE0_ADDR) ? PIPE0_ADDR_BASE : PIPE1_ADDR_BASE;
@@ -279,49 +254,6 @@ static result_t set_standby1()
 /*	-----------------------------------
  * Public operation functions
  */
-//------------------->>>>>>>>>>
-// TODO: functions to test, we can remove them on development end
-result_t nrf24l01_inr(byte_t reg)
-{
-	return inr(reg);
-}
-
-void nrf24l01_inr_data(byte_t reg, pdata_t pd, len_t len)
-{
-	inr_data(reg, pd, len);
-}
-
-void nrf24l01_outr(byte_t reg, byte_t value)
-{
-	outr(reg, value);
-}
-
-void nrf24l01_outr_data(byte_t reg, pdata_t pd, len_t len)
-{
-	outr_data(reg, pd, len);
-}
-
-result_t nrf24l01_command(byte_t cmd)
-{
-	return command(cmd);
-}
-
-result_t nrf24l01_ce_on(void)
-{
-	enable();
-}
-
-result_t nrf24l01_ce_off(void)
-{
-	disable();
-}
-
-void nrf24l01_set_address_pipe(byte_t reg, byte_t pipe)
-{
-	set_address_pipe(reg, pipe);
-}
-//<<<<<<<<<<-------------------
-
 result_t nrf24l01_deinit(void)
 {
 	int_t		value;
@@ -589,12 +521,70 @@ result_t nrf24l01_ptx_wait_datasent(void)
 
 	return SUCCESS;
 }
-result_t nrf24l01_ptx_isempty(void)
-{
-	return (m_mode != TX_MODE || (inr(FIFO_STATUS) & FIFO_TX_EMPTY) != 0);
-}
 
-result_t nrf24l01_ptx_isfull(void)
+#ifdef DETAILS
+void nrf24l01_dump_details(void)
 {
-	return (m_mode != TX_MODE || (inr(FIFO_STATUS) & FIFO_TX_FULL) != 0);
+	union {
+		uint64_t b64;
+		long unsigned int b32[2];
+	} v;
+
+	printf("RX: register=0x%02x status=%#02x\n", inr(CONFIG), command(NOP));
+	printf("RX: EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_RXADDR));
+	nrf24l01_open_pipe(0, NRF24L01_PIPE0_ADDR);
+	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_open_pipe(1, NRF24L01_PIPE1_ADDR);
+	printf("RX: PIPE1 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_open_pipe(2, NRF24L01_PIPE2_ADDR);
+	printf("RX: PIPE2 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_open_pipe(3, NRF24L01_PIPE3_ADDR);
+	printf("RX: PIPE3 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_open_pipe(4, NRF24L01_PIPE4_ADDR);
+	printf("RX: PIPE4 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_open_pipe(5, NRF24L01_PIPE5_ADDR);
+	printf("RX: PIPE5 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	inr_data(RX_ADDR_P0, &v.b64, AW_RD(inr(SETUP_AW)));
+	printf("    RX_ADDR_P0=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	inr_data(RX_ADDR_P1, &v.b64, AW_RD(inr(SETUP_AW)));
+	printf("    RX_ADDR_P1=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	inr_data(RX_ADDR_P2, &v.b64, 1);
+	printf("    RX_ADDR_P2=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	inr_data(RX_ADDR_P3, &v.b64, 1);
+	printf("    RX_ADDR_P3=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	inr_data(RX_ADDR_P4, &v.b64, 1);
+	printf("    RX_ADDR_P4=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	inr_data(RX_ADDR_P5, &v.b64, 1);
+	printf("    RX_ADDR_P5=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	set_address_pipe(TX_ADDR, 0);
+	inr_data(TX_ADDR, &v.b64, AW_RD(inr(SETUP_AW)));
+	printf("    TX_ADDR=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	set_address_pipe(TX_ADDR, 5);
+	inr_data(TX_ADDR, &v.b64, AW_RD(inr(SETUP_AW)));
+	printf("    TX_ADDR=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	set_address_pipe(TX_ADDR, 4);
+	inr_data(TX_ADDR, &v.b64, AW_RD(inr(SETUP_AW)));
+	printf("    TX_ADDR=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	set_address_pipe(TX_ADDR, 3);
+	inr_data(TX_ADDR, &v.b64, AW_RD(inr(SETUP_AW)));
+	printf("    TX_ADDR=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	set_address_pipe(TX_ADDR, 2);
+	inr_data(TX_ADDR, &v.b64, AW_RD(inr(SETUP_AW)));
+	printf("    TX_ADDR=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	set_address_pipe(TX_ADDR, 1);
+	inr_data(TX_ADDR, &v.b64, AW_RD(inr(SETUP_AW)));
+	printf("    TX_ADDR=0x%lx%lx\r\n", v.b32[1], v.b32[0]);
+	nrf24l01_close_pipe(5);
+	printf("RX: PIPE5 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_close_pipe(4);
+	printf("RX: PIPE4 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_close_pipe(3);
+	printf("RX: PIPE3 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_close_pipe(2);
+	printf("RX: PIPE2 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_close_pipe(1);
+	printf("RX: PIPE1 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
+	nrf24l01_close_pipe(0);
+	printf("RX: PIPE0 EN_RXADDR=0x%02x EN_AA=%#02x\n", inr(EN_RXADDR), inr(EN_AA));
 }
+#endif

@@ -114,11 +114,8 @@ static inline client_t *get_client(payload_t *ppl)
 
 static inline void client_disconnect(client_t *pc)
 {
-	TRACE(" IN\n");
 	if (pc != NULL && pc->watch_id != 0) {
 		g_source_remove(pc->watch_id);
-		TRACE("watch = %d\n", pc->watch_id);
-		pc->watch_id = 0;
 	}
 }
 
@@ -126,7 +123,6 @@ static void client_free(client_t *pc)
 {
 	data_t *pdata, *pnext;
 
-	TRACE("close(%d) pipe=%d packet=%d\n", pc->fdsock, pc->pipe, pc->packet_size);
 	close(pc->fdsock);
 	g_free(pc->rxmsg);
 	G_LOCK(m_ptxlist);
@@ -143,7 +139,6 @@ static void client_free(client_t *pc)
 
 static void client_close(gpointer pentry, gpointer user_data)
 {
-	TRACE(" IN\n");
 	client_disconnect((client_t*)pentry);
 }
 
@@ -152,13 +147,13 @@ static void server_cleanup(void)
 	data_t *pdata, *pnext;
 
 	if (m_pclients != NULL) {
-		g_slist_foreach(m_pclients, client_close, NULL);
+		g_slist_free_full(m_pclients, (GDestroyNotify)client_close);
+		m_pclients = NULL;
 	}
 	g_free(m_gwreq);
 	m_gwreq = NULL;
 	m_pversion = NULL;
 
-	TRACE("ptx_list clear:\n");
 	G_LOCK(m_ptxlist);
 	list_for_each_entry_safe(pdata, pnext, &m_ptxlist, node) {
 		list_del_init(&pdata->node);
@@ -170,52 +165,33 @@ static void server_cleanup(void)
 	INIT_LIST_HEAD(&m_ptxlist);
 }
 
-static int get_random_value(int interval, int ntime, int min)
-{
-	int value;
-
-	value = (9973 * ~ tline_us()) + ((value) % 701);
-	srand((unsigned int)value);
-
-	value = (rand() % interval) * ntime;
-	if (value < 0) {
-		value *= -1;
-		value = (value % interval) * ntime;
-	}
-	if (value < min) {
-		value += min;
-	}
-	return value;
-}
-
 static data_t *build_data(int pipe, int net_addr, int msg_type, pdata_t praw, len_t len, data_t *msg)
 {
 	len_t size = (msg != NULL) ? msg->len : 0;
 
 	msg = (data_t*)g_realloc(msg, sizeof(data_t) + size + len);
-	if (msg == NULL) {
-		return NULL;
+	if (msg != NULL) {
+		INIT_LIST_HEAD(&msg->node);
+		msg->len = size + len;
+		msg->offset = 0;
+		msg->pipe = pipe;
+		msg->retry = SEND_RETRY;
+		msg->offset_retry = 0;
+		msg->net_addr = net_addr;
+		msg->msg_type = msg_type;
+		memcpy(msg->raw + size, praw, len);
 	}
-
-	INIT_LIST_HEAD(&msg->node);
-	msg->len = size + len;
-	msg->offset = 0;
-	msg->pipe = pipe;
-	msg->retry = SEND_RETRY;
-	msg->offset_retry = 0;
-	msg->net_addr = net_addr;
-	msg->msg_type = msg_type;
-	memcpy(msg->raw + size, praw, len);
 	return msg;
 }
 
 static int send_data(data_t *pdata, client_t *pc)
 {
 	payload_t payload;
+	byte_t msg_type = pdata->msg_type;
 	int len = pdata->len;
-	byte_t msg_type;
 
-	if (pdata->msg_type == NRF24_APP && len > NRF24_PW_MSG_SIZE) {
+	if (msg_type == NRF24_APP && len > NRF24_PW_MSG_SIZE) {
+		msg_type = NRF24_APP_LAST;
 		if (pdata->offset == 0) {
 			msg_type = NRF24_APP_FIRST;
 			len = NRF24_PW_MSG_SIZE;
@@ -224,12 +200,8 @@ static int send_data(data_t *pdata, client_t *pc)
 			if (len > NRF24_PW_MSG_SIZE) {
 				msg_type = NRF24_APP_FRAG;
 				len = NRF24_PW_MSG_SIZE;
-			} else {
-				msg_type = NRF24_APP_LAST;
 			}
 		}
-	} else {
-		msg_type = pdata->msg_type;
 	}
 	payload.hdr.msg_xmn = MSGXMN_SET(msg_type, pc != NULL ? pc->txmn : 0);
 	payload.hdr.net_addr = pdata->net_addr;
@@ -238,7 +210,7 @@ static int send_data(data_t *pdata, client_t *pc)
 	pdata->offset += len;
 	DUMP_DATA("SEND: ", pdata->pipe, &payload, len + sizeof(hdr_t));
 	nrf24l01_set_ptx(pdata->pipe);
-	nrf24l01_ptx_data(&payload, len + sizeof(hdr_t), pdata->pipe != BROADCAST);
+	nrf24l01_ptx_data(&payload, len + sizeof(hdr_t), pc != NULL);
 	len = nrf24l01_ptx_wait_datasent();
 	nrf24l01_set_prx();
 	return len;
@@ -246,9 +218,11 @@ static int send_data(data_t *pdata, client_t *pc)
 
 static inline void put_ptx_queue(data_t *pd)
 {
-	G_LOCK(m_ptxlist);
-	list_move_tail(&pd->node, &m_ptxlist);
-	G_UNLOCK(m_ptxlist);
+	if (pd != NULL) {
+		G_LOCK(m_ptxlist);
+		list_move_tail(&pd->node, &m_ptxlist);
+		G_UNLOCK(m_ptxlist);
+	}
 }
 
 static void ptx_service(void)
@@ -288,7 +262,6 @@ static void ptx_service(void)
 				} else {
 					pdata->offset = pdata->offset_retry;
 					put_ptx_queue(pdata);
-					TRACE("Resend(%d) message to the pipe#%d\n", pdata->retry, pdata->pipe);
 				}
 			} else {
 				if (pc != NULL) {
@@ -296,12 +269,10 @@ static void ptx_service(void)
 					++pc->txmn;
 				}
 				if (pdata->len != pdata->offset) {
-					TRACE("Message fragment sent to the pipe#%d len=%d\n", pdata->pipe, pdata->len);
 					pdata->retry = SEND_RETRY;
 					put_ptx_queue(pdata);
 				} else {
 					g_free(pdata);
-					TRACE("Message sent to the pipe#%d\n", pdata->pipe);
 				}
 			}
 			send_state = PTX_FIRE;
@@ -424,7 +395,7 @@ static void check_heartbeat(gpointer pentry, gpointer user_data)
 	}
 }
 
-static int prx_service(void)
+static void prx_service(void)
 {
 	payload_t	data;
 	int	pipe,
@@ -473,7 +444,6 @@ static int prx_service(void)
 				pc = get_client(&data);
 				if (pc != NULL && (MSGXMN_SET(msg_type, pc->rxmn)  == data.hdr.msg_xmn)) {
 					++pc->rxmn;
-					TRACE(" IN\n");
 					client_disconnect(pc);
 				}
 				break;
@@ -518,7 +488,7 @@ static int prx_service(void)
 					}
 					if (size <= pc->packet_size && size <= m_pversion->packet_size) {
 						pc->rxmsg = build_data(pipe, data.hdr.net_addr, msg_type, data.msg.raw, len, pc->rxmsg);
-						if (msg_type == NRF24_APP || msg_type == NRF24_APP_LAST) {
+						if ((pc->rxmsg != NULL) && (msg_type == NRF24_APP || msg_type == NRF24_APP_LAST)) {
 							write(pc->fdsock, pc->rxmsg->raw, pc->rxmsg->len);
 							g_free(pc->rxmsg);
 							pc->rxmsg = NULL;
@@ -531,7 +501,6 @@ static int prx_service(void)
 	}
 	ptx_service();
 	g_slist_foreach(m_pclients, check_heartbeat, NULL);
-	return PRX;
 }
 
 static data_t *gwreq_build(void)
@@ -572,13 +541,13 @@ static int gwreq(bool reset)
 		ch = nrf24l01_get_channel();
 		ch0 = ch;
 		m_gwreq->retry = m_gwreq->net_addr = 1;//TODO get_random_value(JOINREQ_RETRY, 2, JOINREQ_RETRY);
+		TRACE("Server looking for one channel free, waiting ...\n");
 		state = REQUEST;
 	}
 
 	switch(state) {
 	case REQUEST:
 		delay = get_random_value(SEND_RANGE_MS, SEND_FACTOR, SEND_RANGE_MS_MIN);
-		TRACE("Server joins ch#%d retry=%d/%d delay=%ld\n", ch, m_gwreq->net_addr, m_gwreq->retry, delay);
 		send_data(m_gwreq, NULL);
 		m_gwreq->offset = 0;
 		start = tline_ms();
@@ -591,7 +560,7 @@ static int gwreq(bool reset)
 
 	case TIMEOUT:
 		if (--m_gwreq->net_addr == 0) {
-			TRACE("Server join on channel #%d\n", nrf24l01_get_channel());
+			TRACE("Server joined on channel #%d\n", nrf24l01_get_channel());
 			ret = PRX;
 			break;
 		}
@@ -672,7 +641,7 @@ static gboolean server_service(gpointer dummy)
 		break;
 
 	case PRX:
-		m_state = prx_service();
+		prx_service();
 		break;
 	}
 	return result;
@@ -716,7 +685,6 @@ int nrf24l01_server_open(int socket, int channel, version_t *pversion, const voi
 		return ERROR;
 	}
 
-	TRACE("Server try to join on channel #%d\n", nrf24l01_get_channel());
 	m_fd = socket;
 	m_pversion = pversion;
 	m_paddr = paddr;

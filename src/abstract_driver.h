@@ -81,7 +81,6 @@ typedef struct {
 	int (*close)(int sockfd);
 	int (*listen)(int sockfd, int backlog, const void *addr, size_t len);
 	int (*connect)(int cli_sockfd, const void *addr, size_t len);
-	int (*available)(int sockfd);
 	int (*read)(int sockfd, void *buffer, size_t len);
 	int (*write)(int sockfd, const void *buffer, size_t len);
 } abstract_driver_t;

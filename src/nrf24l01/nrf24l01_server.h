@@ -6,7 +6,6 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-#include <stdlib.h>
 #include <sys/socket.h>
 #include <inttypes.h>
 #include <fcntl.h>

@@ -57,24 +57,6 @@ static client_t		m_client;
  * Local functions
  */
 
-static int_t get_random_value(int_t interval, int_t ntime, int_t min)
-{
-	int_t value;
-
-	value = (9973 * ~ tline_us()) + ((value) % 701);
-	srand(value);
-
-	value = (rand() % interval) * ntime;
-	if (value < 0) {
-		value *= -1;
-		value = (value % interval) * ntime;
-	}
-	if (value < min) {
-		value += min;
-	}
-	return value;
-}
-
 static void disconnect(void)
 {
 	nrf24l01_set_standby();
@@ -99,9 +81,10 @@ static data_t *build_data(data_t *pd, byte_t pipe, uint16_t net_addr, byte_t msg
 static int_t send_data(data_t *pdata, pdata_t praw, len_t len)
 {
 	payload_t payload;
-	byte_t msg_type;
+	byte_t msg_type = pdata->msg_type;
 
-	if (pdata->msg_type == NRF24_APP && len > NRF24_PW_MSG_SIZE) {
+	if (msg_type == NRF24_APP && len > NRF24_PW_MSG_SIZE) {
+		msg_type = NRF24_APP_LAST;
 		if (pdata->offset == 0) {
 			msg_type = NRF24_APP_FIRST;
 			len = NRF24_PW_MSG_SIZE;
@@ -110,12 +93,8 @@ static int_t send_data(data_t *pdata, pdata_t praw, len_t len)
 			if (len > NRF24_PW_MSG_SIZE) {
 				msg_type = NRF24_APP_FRAG;
 				len = NRF24_PW_MSG_SIZE;
-			} else {
-				msg_type = NRF24_APP_LAST;
 			}
 		}
-	} else {
-		msg_type = pdata->msg_type;
 	}
 	payload.hdr.msg_xmn = MSGXMN_SET(msg_type, pdata->pipe != BROADCAST ? m_client.txmn : 0);
 	payload.hdr.net_addr = pdata->net_addr;

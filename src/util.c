@@ -74,3 +74,21 @@ int tline_out(ulong_t time,  ulong_t last,  ulong_t timeout)
     /* Timeout is flagged */
     return (time >= timeout);
 }
+
+int get_random_value(int interval, int ntime, int min)
+{
+	int value;
+
+	value = (9973 * ~ tline_us()) + ((value) % 701);
+	srand((unsigned int)value);
+
+	value = (rand() % interval) * ntime;
+	if (value < 0) {
+		value *= -1;
+		value = (value % interval) * ntime;
+	}
+	if (value < min) {
+		value += min;
+	}
+	return value;
+}

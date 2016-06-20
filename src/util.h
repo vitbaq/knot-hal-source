@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <sys/time.h>
 #endif
+#include <stdlib.h>
 
 #include "atypes.h"
 
@@ -75,6 +76,15 @@ static inline ulong_t tline_sec(void) { return (millis() / 1000UL); }
  * \return  true for timeout expired; otherwise, false.
  */
 int tline_out(ulong_t time,  ulong_t last,  ulong_t timeout);
+
+/**
+ * \brief Get a random number value.
+ * \param   interval  Range to random value.
+ * \param   ntime  Number of times the interval.
+ * \param   min Minimum value.
+ * \return  random number value.
+ */
+int get_random_value(int interval, int ntime, int min);
 
 #ifdef __cplusplus
 } // extern "C"

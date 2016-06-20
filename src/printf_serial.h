@@ -6,14 +6,12 @@
  * of the BSD license. See the LICENSE file for details.
  *
  */
-
-#include <stdio.h>
-#include <HardwareSerial.h>
-
 #ifndef __PRINTF_SERIAL_H__
 #define __PRINTF_SERIAL_H__
 
 #ifdef ARDUINO
+#include <stdio.h>
+#include <HardwareSerial.h>
 
 static int _putchar(char ch, FILE*) 
 {
@@ -30,13 +28,6 @@ void printf_serial_init(void)
 	}
 	fdevopen(&_putchar, NULL);
 }
-
-#else
-
-void printf_serial_begin(void)
-{
-}
-
 #endif // ARDUINO
 
 #endif // __PRINTF_SERIAL_H__
