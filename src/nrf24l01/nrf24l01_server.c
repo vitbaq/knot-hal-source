@@ -529,7 +529,7 @@ static int gwreq(bool reset)
 	if (reset) {
 		ch = nrf24l01_get_channel();
 		ch0 = ch;
-		m_gwreq->retry = m_gwreq->net_addr = 1;//TODO get_random_value(JOINREQ_RETRY, 2, JOINREQ_RETRY);
+		m_gwreq->retry = m_gwreq->net_addr = get_random_value(JOINREQ_RETRY, 2, JOINREQ_RETRY);
 		TRACE("Server looking for one channel free, waiting ...\n");
 		state = REQUEST;
 	}
