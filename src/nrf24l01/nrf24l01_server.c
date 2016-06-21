@@ -60,7 +60,6 @@ static volatile int		m_fd = SOCKET_INVALID,
 									m_state = UNKNOWN;
 static GThread			*m_gthread = NULL;
 static GMainLoop	*m_loop = NULL;
-static GSList				*m_pclients = NULL;
 static client_t			*m_pipes_allocate[NRF24L01_PIPE_ADDR_MAX] = {NULL, NULL, NULL, NULL, NULL};
 static data_t				*m_gwreq = NULL;
 static version_t		*m_pversion = NULL;
@@ -73,7 +72,7 @@ static G_LOCK_DEFINE(m_ptxlist);
 /*
  * Local functions
  */
-static inline int set_pipe(int pipe, client_t *pc)
+static inline int set_pipe_client(int pipe, client_t *pc)
 {
 	if (pipe > BROADCAST && pipe < (NRF24L01_PIPE_ADDR_MAX+1)) {
 		m_pipes_allocate[pipe-1] = pc;
@@ -81,7 +80,7 @@ static inline int set_pipe(int pipe, client_t *pc)
 	return 0;
 }
 
-static inline client_t *get_pipe(int pipe)
+static inline client_t *get_pipe_client(int pipe)
 {
 	if (pipe > BROADCAST && pipe < (NRF24L01_PIPE_ADDR_MAX+1)) {
 		return m_pipes_allocate[pipe-1];
@@ -100,21 +99,34 @@ static int get_pipe_free(void)
 	return (pipe != 0 ? (NRF24L01_PIPE_ADDR_MAX - pipe) + 1 : NRF24L01_NO_PIPE);
 }
 
-static gint join_match(gconstpointer pentry, gconstpointer pdata)
+static bool check_pipes_free(void)
 {
-	return !(((client_t*)pentry)->net_addr == ((payload_t*)pdata)->hdr.net_addr &&
-				  ((client_t*)pentry)->hashid == ((payload_t*)pdata)->msg.join.hashid);
+	int 			pipe;
+	client_t	**pa = m_pipes_allocate;
+
+	for (pipe=NRF24L01_PIPE_ADDR_MAX; pipe!=0 && *pa == NULL; --pipe, ++pa)
+		;
+
+	return (pipe == 0);
 }
 
 static inline client_t *get_client(payload_t *ppl)
 {
-	GSList *pentry = g_slist_find_custom(m_pclients, ppl, join_match);
-	return (pentry != NULL ? (client_t*)pentry->data : NULL);
+	int 			pipe;
+	client_t	**pa = m_pipes_allocate;
+
+	for (pipe=NRF24L01_PIPE_ADDR_MAX; pipe!=0; --pipe, ++pa) {
+		if (*pa != NULL && (*pa)->net_addr == ppl->hdr.net_addr && (*pa)->hashid == ppl->msg.join.hashid) {
+			return *pa;
+		}
+	}
+	return NULL;
 }
 
 static inline void client_disconnect(client_t *pc)
 {
 	if (pc != NULL && pc->watch_id != 0) {
+		TRACE("Disconnecting pipe#%d...\n", pc->pipe);
 		g_source_remove(pc->watch_id);
 	}
 }
@@ -123,7 +135,6 @@ static void client_free(client_t *pc)
 {
 	data_t *pdata, *pnext;
 
-	close(pc->fdsock);
 	g_free(pc->rxmsg);
 	G_LOCK(m_ptxlist);
 	list_for_each_entry_safe(pdata, pnext, &m_ptxlist, node) {
@@ -133,36 +144,8 @@ static void client_free(client_t *pc)
 		}
 	}
 	G_UNLOCK(m_ptxlist);
-	set_pipe(pc->pipe, NULL);
+	set_pipe_client(pc->pipe, NULL);
 	g_free(pc);
-}
-
-static void client_close(gpointer pentry, gpointer user_data)
-{
-	client_disconnect((client_t*)pentry);
-}
-
-static void server_cleanup(void)
-{
-	data_t *pdata, *pnext;
-
-	if (m_pclients != NULL) {
-		g_slist_free_full(m_pclients, (GDestroyNotify)client_close);
-		m_pclients = NULL;
-	}
-	g_free(m_gwreq);
-	m_gwreq = NULL;
-	m_pversion = NULL;
-
-	G_LOCK(m_ptxlist);
-	list_for_each_entry_safe(pdata, pnext, &m_ptxlist, node) {
-		list_del_init(&pdata->node);
-		DUMP_DATA(" ", pdata->pipe, pdata->raw, pdata->len);
-		g_free(pdata);
-	}
-	G_UNLOCK(m_ptxlist);
-	g_mutex_clear(&G_LOCK_NAME(m_ptxlist));
-	INIT_LIST_HEAD(&m_ptxlist);
 }
 
 static data_t *build_data(int pipe, int net_addr, int msg_type, pdata_t praw, len_t len, data_t *msg)
@@ -251,12 +234,12 @@ static void ptx_service(void)
 			pdata = list_first_entry(&m_ptxlist, data_t, node);
 			list_del_init(&pdata->node);
 			G_UNLOCK(m_ptxlist);
-			pc = get_pipe(pdata->pipe);
+			pc = get_pipe_client(pdata->pipe);
 			if (pc == NULL && pdata->pipe != BROADCAST) {
 				g_free(pdata);
 			} else if (send_data(pdata, pc) != SUCCESS) {
 				if (--pdata->retry == 0) {
-					TERROR("Failed to send message to the pipe#%d\n", pdata->pipe);
+					TERROR(" failed to send message to the pipe#%d\n", pdata->pipe);
 					client_disconnect(pc);
 					g_free(pdata);
 				} else {
@@ -283,42 +266,45 @@ static void ptx_service(void)
 
 static gboolean client_watch(GIOChannel *io, GIOCondition cond, gpointer user_data)
 {
-	client_t *pc = (client_t*)user_data;
+	client_t *pc = get_pipe_client((intptr_t)user_data);
 	int nbytes;
 	byte_t *pmsg;
 
-	if (cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
+	if (pc == NULL || cond & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
 		return FALSE;
 	}
 
 	pmsg = g_new(byte_t, pc->packet_size);
 	if (pmsg == NULL) {
-		TERROR("read alloc error: %s\n", strerror(errno));
+		TERROR(" read alloc error: %s\n", strerror(errno));
 		return FALSE;
 	}
 
 	nbytes = read(pc->fdsock, pmsg, pc->packet_size);
 	if (nbytes < 0) {
-		TERROR("read() error - %s(%d)\n", strerror(errno), errno);
+		TERROR(" read() error - %s(%d)\n", strerror(errno), errno);
 		g_free(pmsg);
 		return FALSE;
 	}
 
-	put_ptx_queue(build_data(pc->pipe, pc->net_addr, NRF24_APP, pmsg, nbytes, NULL));
+	if (nbytes != 0) {
+		put_ptx_queue(build_data(pc->pipe, pc->net_addr, NRF24_APP, pmsg, nbytes, NULL));
+	}
 	g_free(pmsg);
 	return TRUE;
 }
 
 static void client_destroy(gpointer user_data)
 {
-	client_t *pc = user_data;
+	client_t *pc = get_pipe_client((intptr_t)user_data);
 
-	TRACE("pipe#%d disconnected\n", pc->pipe);
-	m_pclients = g_slist_remove(m_pclients, pc);
-	client_free(pc);
+	if (pc != NULL) {
+		TRACE("pipe#%d disconnected(%d)\n", pc->pipe, pc->fdsock);
+		client_free(pc);
+	}
 }
 
-static int set_new_client(payload_t *ppl, int len)
+static int set_new_client(payload_t *ppl)
 {
 	int	sock,
 			pipe;
@@ -335,9 +321,16 @@ static int set_new_client(payload_t *ppl, int len)
 		return NRF24L01_NO_PIPE;
 	}
 
+	pc = g_new0(client_t, 1);
+	if (pc == NULL) {
+		TERROR(" client alloc error: %s\n", strerror(errno));
+		return NRF24L01_NO_PIPE;
+	}
+
 	sock = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (sock < 0) {
-		TERROR(" >socket() failure: %s\n", strerror(errno));
+		TERROR(" socket() failure: %s\n", strerror(errno));
+		g_free(pc);
 		return NRF24L01_NO_PIPE;
 	}
 
@@ -346,52 +339,48 @@ static int set_new_client(payload_t *ppl, int len)
 	/* abstract namespace: first character must be null */
 	strncpy(addr.sun_path+1, (const char *__restrict)m_paddr, m_laddr);
 	if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-		TERROR(" >connect() failure: %s\n", strerror(errno));
+		TERROR(" connect() failure: %s\n", strerror(errno));
 		close(sock);
+		g_free(pc);
 		return NRF24L01_NO_PIPE;
 	}
 
-	pc = g_new0(client_t, 1);
-	if (pc == NULL) {
-		TERROR("client alloc error: %s\n", strerror(errno));
+	sock_io = g_io_channel_unix_new(sock);
+	if(sock_io == NULL)
+	{
+		TERROR(" error - node channel creation failure\n");
 		close(sock);
+		g_free(pc);
 		return NRF24L01_NO_PIPE;
 	}
 
+	g_io_channel_set_close_on_unref(sock_io, TRUE);
 	pc->fdsock = sock;
 	pc->pipe = pipe;
 	pc->net_addr = ppl->hdr.net_addr;
 	pc->packet_size = ppl->msg.join.version.packet_size;
 	pc->hashid = ppl->msg.join.hashid;
 	pc->heartbeat_wait = tline_ms();
-	set_pipe(pipe, pc);
-
-	sock_io = g_io_channel_unix_new(sock);
-	if(sock_io == NULL)
-	{
-		TERROR("error - node channel creation failure\n");
-		client_free(pc);
-		return NRF24L01_NO_PIPE;
-	}
-
-	g_io_channel_set_close_on_unref(sock_io, FALSE);
-	m_pclients = g_slist_append(m_pclients, pc);
-
+	set_pipe_client(pipe, pc);
 	/* Watch for unix socket disconnection */
 	pc->watch_id = g_io_add_watch_full(sock_io, G_PRIORITY_DEFAULT,
 				G_IO_HUP | G_IO_NVAL | G_IO_ERR | G_IO_IN,
-				client_watch, pc, client_destroy);
+				client_watch, (gpointer)(intptr_t)pipe, client_destroy);
 	/* Keep only one ref: GIOChannel watch */
 	g_io_channel_unref(sock_io);
-
-	TRACE("pipe#%d connected\n", pipe);
+	TRACE("pipe#%d connected(%d)\n", pipe, sock);
 	return pipe;
 }
 
-static void check_heartbeat(gpointer pentry, gpointer user_data)
+static void check_heartbeat(bool bcloseall)
 {
-	if (tline_out(tline_ms(), ((client_t*)pentry)->heartbeat_wait, NRF24_HEARTBEAT_TIMEOUT_MS)) {
-		client_disconnect((client_t*)pentry);
+	int 			pipe;
+	client_t	**pa = m_pipes_allocate;
+
+	for (pipe=NRF24L01_PIPE_ADDR_MAX; pipe!=0; --pipe, ++pa) {
+		if (*pa != NULL && (bcloseall || tline_out(tline_ms(), (*pa)->heartbeat_wait, NRF24_HEARTBEAT_TIMEOUT_MS))) {
+			client_disconnect(*pa);
+		}
 	}
 }
 
@@ -427,7 +416,7 @@ static void prx_service(void)
 					data.msg.join.data = m_pversion->packet_size;
 					data.msg.join.result = NRF24_EOVERFLOW;
 				} else {
-					data.msg.join.data = set_new_client(&data, len);
+					data.msg.join.data = set_new_client(&data);
 					data.msg.join.result = (data.msg.join.data != NRF24L01_NO_PIPE) ? NRF24_SUCCESS : NRF24_EUSERS;
 				}
 				put_ptx_queue(build_data(pipe, data.hdr.net_addr, msg_type, data.msg.raw, len, NULL));
@@ -473,7 +462,7 @@ static void prx_service(void)
 				/* No break; fall through intentionally */
 			case NRF24_APP_LAST:
 			case NRF24_APP:
-				pc = get_pipe(pipe);
+				pc = get_pipe_client(pipe);
 				if (pc != NULL && pc->pipe == pipe && pc->net_addr == data.hdr.net_addr &&
 					 (MSGXMN_SET(msg_type, pc->rxmn)  == data.hdr.msg_xmn)) {
 					int size;
@@ -500,7 +489,7 @@ static void prx_service(void)
 		}
 	}
 	ptx_service();
-	g_slist_foreach(m_pclients, check_heartbeat, NULL);
+	check_heartbeat(false);
 }
 
 static data_t *gwreq_build(void)
@@ -592,7 +581,7 @@ static gboolean server_service(gpointer dummy)
 {
 	gboolean result = G_SOURCE_CONTINUE;
 
-	if (m_fd == SOCKET_INVALID || (fcntl(m_fd, F_GETFL) < 0 && errno == EBADF)) {
+	if (m_state != CLOSE_PENDING && (m_fd == SOCKET_INVALID || (fcntl(m_fd, F_GETFL) < 0 && errno == EBADF))) {
 		m_state = CLOSE;
 	} else 	if (m_state == UNKNOWN) {
 		m_state = OPEN;
@@ -606,14 +595,15 @@ static gboolean server_service(gpointer dummy)
 		nrf24l01_close_pipe(2);
 		nrf24l01_close_pipe(1);
 		nrf24l01_close_pipe(0);
-		server_cleanup();
-		m_state = UNKNOWN;
-		if (m_fd != SOCKET_INVALID) {
-			m_fd = SOCKET_INVALID;
-			m_gthread == NULL;
+		check_heartbeat(true);
+		m_state = CLOSE_PENDING;
+		break;
+
+	case CLOSE_PENDING:
+		if (check_pipes_free()) {
+			g_main_loop_quit(m_loop);
+			result = G_SOURCE_REMOVE;
 		}
-		g_main_loop_quit(m_loop);
-		result = G_SOURCE_REMOVE;
 		break;
 
 	case OPEN:
@@ -637,7 +627,7 @@ static gboolean server_service(gpointer dummy)
 
 	case CHANNEL_BUSY:
 		close(m_fd);
-		m_state = CLOSE_PENDING;
+		m_state = CHANNEL_BUSY;
 		break;
 
 	case PRX:
@@ -655,7 +645,7 @@ static gpointer service_thread(gpointer dummy)
     context = g_main_context_new();
     m_loop = g_main_loop_new(context, FALSE);
     g_main_context_unref(context);
-    timer = g_timeout_source_new(0);
+    timer = g_timeout_source_new(SEND_RANGE_MS_MIN);
     g_source_set_callback(timer, server_service, m_loop, NULL);
     g_source_attach(timer, context);
     g_source_unref(timer);
@@ -711,6 +701,7 @@ int nrf24l01_server_close(int socket)
 		m_fd = SOCKET_INVALID;
 		if (m_gthread != NULL) {
 			g_thread_join(m_gthread);
+			g_thread_unref(m_gthread);
 			m_gthread == NULL;
 		}
 	}

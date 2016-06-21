@@ -55,7 +55,8 @@ typedef struct {
 	int					count,
 							msg_count,
 							inc,
-							size;
+							size,
+							sock;
 	char				msg[PACKET_SIZE_MAX];
 } session_t;
 
@@ -76,32 +77,36 @@ static gboolean node_io_watch(GIOChannel *io, GIOCondition cond,
 
 	sock = g_io_channel_unix_get_fd(io);
 
-	fprintf(stdout, "SERVER:\n");
+	//fprintf(stdout, "SERVER:\n");
 	nbytes = read(sock, buffer, sizeof(buffer));
 	if (nbytes < 0) {
-		fprintf(stderr, "recv() error - %s(%d)\n", strerror(errno), errno);
+		fprintf(stderr, "read() error - %s(%d)\n", strerror(errno), errno);
 		return FALSE;
 	}
 
-	fprintf(stdout, "RX(%d):[%03ld]: '%.*s'\n", sock, nbytes, (int)nbytes, buffer);
+	//fprintf(stdout, "RX(%d):[%03ld]: '%.*s'\n", sock, nbytes, (int)nbytes, buffer);
 
-	nbytes = sprintf(buffer, "%.*s", ps->count, ps->msg);
-	ps->inc = (ps->count == ps->size) ? -1 : (ps->count == 1 ? 1 : ps->inc);
-	ps->count += ps->inc;
-	if (write(sock, buffer, nbytes) < 0) {
-		return FALSE;
+	if (nbytes != 0) {
+		nbytes = sprintf(buffer, "%.*s", ps->count, ps->msg);
+		ps->inc = (ps->count == ps->size) ? -1 : (ps->count == 1 ? 1 : ps->inc);
+		ps->count += ps->inc;
+		if (write(sock, buffer, nbytes) < 0) {
+			fprintf(stderr, "write() error - %s(%d)\n", strerror(errno), errno);
+			return FALSE;
+		}
+		//fprintf(stdout, "TX(%d):[%03ld]: %d-'%.*s'\n", sock, nbytes, ++ps->msg_count, (int)nbytes, buffer);
 	}
 
-	fprintf(stdout, "TX(%d):[%03ld]: %d -  '%.*s'\n", sock, nbytes, ++ps->msg_count, (int)nbytes, buffer);
 	return TRUE;
 }
 
 static void session_release(session_t *ps)
 {
 	/* Decrements the reference count of session */
+	fprintf(stdout, "session(%d) released\n", ps->sock);
 	--ps->ref;
 	if(ps->ref == 0) {
-		fprintf(stdout, "session released\n");
+		g_free(ps);
 	}
 }
 
@@ -151,6 +156,8 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 		return TRUE;
 	}
 
+	g_io_channel_set_close_on_unref(node_io, TRUE);
+
 	/* Increments the reference count of session */
 	++ps->ref;
 	for (ps->size=0, ps->inc=MESSAGE_SIZE; ps->size<sizeof(ps->msg);) {
@@ -161,8 +168,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	}
 	ps->count = get_random_value(ps->size, 1, 1);
 	ps->inc = 1;
-
-	g_io_channel_set_close_on_unref(node_io, TRUE);
+	ps->sock = sockfd;
 
 	/* Watch for unix socket disconnection */
 	g_io_add_watch_full(node_io, G_PRIORITY_DEFAULT,
@@ -171,7 +177,7 @@ static gboolean accept_cb(GIOChannel *io, GIOCondition cond,
 	/* Keep only one ref: GIOChannel watch */
 	g_io_channel_unref(node_io);
 
-	fprintf(stdout, "connected(%d)\n", sockfd);
+	fprintf(stdout, "session(%d) established\n", sockfd);
 	return TRUE;
 }
 

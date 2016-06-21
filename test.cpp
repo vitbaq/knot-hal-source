@@ -74,7 +74,6 @@ int main(void)
 			inc = 1;
 			msg_count = 0;
 		}
-		fprintf(stdout, "CLIENT:\n");
 		nbytes = sprintf(buffer, "%.*s", count, msg);
 		inc = (count == size) ? -1 : (count == 1 ? 1 : inc);
 		count += inc;
@@ -83,7 +82,7 @@ int main(void)
 			nrf24l01_driver.close(sock);
 			connected = false;
 		} else {
-			fprintf(stdout, "TX:[%03ld]: %d - '%.*s'\n", nbytes, ++msg_count, (int)nbytes, buffer);
+			fprintf(stdout, "TX:[%03ld]: %d-'%.*s'\n", nbytes, ++msg_count, (int)nbytes, buffer);
 		}
 		while(connected) {
 			nbytes = nrf24l01_driver.read(sock, buffer, sizeof(buffer));
