@@ -17,6 +17,7 @@
 #include <linux/spi/spidev.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #define LOW							0
 #define HIGH							1
@@ -28,8 +29,6 @@ static int	m_spi_fd = -1;
 
 void spi_init(void)
 {
-	unsigned char mode = SPI_MODE_0;
-
 	if(m_spi_fd < 0) {
 #if defined(RPI_BOARD) || defined(RPI2_BOARD)
 		m_spi_fd = open("/dev/spidev0.0", O_RDWR);
@@ -37,9 +36,9 @@ void spi_init(void)
 		//m_spi_fd = open("/dev/spidev5.1", O_RDWR);
 		#error Set correct device name to open SPI device.
 #endif
-		if(m_spi_fd > 0) {
-			ioctl(m_spi_fd, SPI_IOC_WR_MODE, &mode);
-			ioctl(m_spi_fd, SPI_IOC_RD_MODE, &mode);
+		if(m_spi_fd < 1) {
+			fprintf(stderr, "'/dev/spidev0.0' open error(%d): '%s'\n", errno, strerror(errno));
+			exit(-1);
 		}
 	}
 }
@@ -54,6 +53,7 @@ void spi_deinit(void)
 
 bool spi_transfer(void *ptx, len_t ltx, void *prx, len_t lrx)
 {
+	unsigned char mode = SPI_MODE_0;
 	struct spi_ioc_transfer data_ioc[2],
 											   *pdata_ioc = data_ioc;
 	uint8_t *pdummy = NULL;
@@ -92,10 +92,9 @@ bool spi_transfer(void *ptx, len_t ltx, void *prx, len_t lrx)
 		++ntransfer;
 	}
 
+	ioctl(m_spi_fd, SPI_IOC_WR_MODE, &mode);
 	ioctl(m_spi_fd, SPI_IOC_MESSAGE(ntransfer), data_ioc);
-
 	free(pdummy);
-
 	return 1;
 }
 
