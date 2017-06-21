@@ -1,4 +1,4 @@
-lib_LIBRARIES = libhalcommnrf24.a libhalcommserial.a
+lib_LIBRARIES = libhalcommnrf24.a libhalcommserial.a libhalcommsx127x.a
 
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS)
 
@@ -11,9 +11,14 @@ libhalcommserial_a_SOURCES = comm_serial_linux.c
 libhalcommserial_a_CPPFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/src/drivers
 libhalcommserial_a_DEPENDENCIES = $(top_srcdir)/hal/comm.h
 
+libhalcommsx127x_a_SOURCES = comm_lorasx127x.c
+libhalcommsx127x_a_CPPFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/src/lora
+libhalcommsx127x_a_DEPENDENCIES = $(top_srcdir)/hal/comm.h
+
 all-local:
 	$(MKDIR_P) $(top_srcdir)/libs && cp $(lib_LIBRARIES) $(top_srcdir)/libs
 
 clean-local:
 	$(RM) -r libhalcommnrf24.a
 	$(RM) -r libhalcommserial.a
+	$(RM) -r libhalcommsx127x.a

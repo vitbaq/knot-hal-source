@@ -4,8 +4,8 @@ CP=cp
 ZIP=zip
 
 AM_MAKEFLAGS = --no-print-directory
-SUBDIRS = src/spi src/nrf24l01 src/hal/storage src/hal/time src/hal/log \
-					src/hal/comm src/drivers src/hal/gpio
+SUBDIRS = src/spi src/nrf24l01 src/lora src/hal/storage src/hal/time \
+			src/hal/log src/hal/comm src/drivers src/hal/gpio
 
 AM_CFLAGS = $(WARNING_CFLAGS) $(BUILD_CFLAGS)
 AM_LDFLAGS = $(BUILD_LDFLAGS)
