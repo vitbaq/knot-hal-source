@@ -7,8 +7,26 @@
  *
  */
 
-#include "include/comm.h"
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
+
+#ifdef ARDUINO
+#include "hal/avr_errno.h"
+#include "hal/avr_unistd.h"
+#else
+#include <errno.h>
+#include <unistd.h>
+#endif
+
+#include "hal/comm.h"
+#include "hal/time.h"
 #include "hal/lorasx127x.h"
+#include "sx127x_hal.h"
+#include "sx127x.h"
+
 
 #define DATA_SIZE		64
 
@@ -121,7 +139,20 @@ int hal_comm_close(int sockfd)
 
 ssize_t hal_comm_read(int sockfd, void *buffer, size_t count)
 {
-	return 0;
+	struct lora_io_pack p;
+
+	size_t len_buffer = 0;
+
+	if (!radio_irq_flag(IRQ_LORA_RXDONE_MASK))
+		return 0;
+
+	radio_irq_handler(0, (uint8_t *)&p, &len_buffer);
+
+	memcpy(buffer, p.payload, len_buffer-1);
+
+	//After read, put radio on rx mode.
+	radio_rx(RXMODE_SCAN);
+	return len_buffer;
 }
 
 ssize_t hal_comm_write(int sockfd, const void *buffer, size_t count)
