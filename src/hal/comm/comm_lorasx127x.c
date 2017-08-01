@@ -32,6 +32,15 @@
 #define MGMT_SIZE		60
 #define DATA_SIZE		60
 
+#define FLAG_TIMEOUT		1000
+
+enum {
+	DATA,
+	CHECK,
+	START,
+	MGMT
+};
+
 /* GW address */
 static struct lora_mac mac_local = {.address.uint64 = 0};
 
@@ -283,4 +292,61 @@ int hal_comm_connect(int sockfd, uint64_t *addr)
 	mgmt.len_tx = len;
 
 	return 0;
+}
+
+void hal_comm_process(void)
+{
+	static int sockIndex = 1;
+	static int state = DATA;
+	static int previous_state = DATA;
+
+	static unsigned long time_start;
+
+	switch (state) {
+	case DATA:
+		if (peers[sockIndex-1].len_tx &&
+					radio_irq_flag(IRQ_LORA_RXDONE_MASK)) {
+			time_start = hal_time_ms();
+			write_data_radio(sockIndex);
+			state = CHECK;
+		} else {
+			state = MGMT;
+		}
+		previous_state = DATA;
+		break;
+	case CHECK:
+		if (radio_irq_flag(IRQ_LORA_TXDONE_MASK) == 0) {
+			state = START;
+		} else if (hal_timeout(hal_time_ms(),
+						time_start, FLAG_TIMEOUT) > 0) {
+			if (previous_state == DATA)
+				state = DATA;
+			else
+				state = MGMT;
+		}
+		break;
+	case START:
+		if (previous_state == DATA) {
+			peers[sockIndex-1].len_tx = 0;
+			radio_rx(RXMODE_SCAN);
+			state = MGMT;
+			sockIndex++; //colocar mod;
+			if (sockIndex > CONNECTION_COUNTER)
+				sockIndex = 1;
+		} else if (previous_state == MGMT) {
+			mgmt.len_tx = 0;
+			state = DATA;
+		}
+		break;
+	case MGMT:
+		if (mgmt.len_tx && radio_irq_flag(IRQ_LORA_RXDONE_MASK)) {
+			time_start = hal_time_ms();
+			write_mgmt_radio();
+			state = CHECK;
+		} else {
+			state = DATA;
+		}
+		previous_state = MGMT;
+		break;
+	}
 }
