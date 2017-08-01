@@ -7,8 +7,27 @@
  *
  */
 
-#include "include/comm.h"
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
+
+#ifdef ARDUINO
+#include "hal/avr_errno.h"
+#include "hal/avr_unistd.h"
+#else
+#include <errno.h>
+#include <unistd.h>
+#endif
+
+#include "hal/comm.h"
+#include "hal/time.h"
 #include "hal/lorasx127x.h"
+#include "lorasx127x_ll.h"
+#include "sx127x_hal.h"
+#include "sx127x.h"
+
 
 #define MGMT_SIZE		60
 #define DATA_SIZE		60
@@ -129,7 +148,48 @@ int hal_comm_close(int sockfd)
 
 ssize_t hal_comm_read(int sockfd, void *buffer, size_t count)
 {
-	return 0;
+	struct lora_io_pack p;
+	struct lora_ll_mgmt_pdu *mgmt_pdu;
+	struct lora_ll_data_pdu *data_pdu;
+	// struct lora_ll_mgmt_presence *mgmt_pres;
+	// struct lora_ll_mgmt_connect *mgmt_conn;
+	// struct lora_ll_data_ctrl *data_ctrl;
+
+	size_t len_buffer = 0;
+
+	radio_irq_handler(0, (uint8_t *)&p, &len_buffer);
+
+	if (p.id == LORA_MGMT) {
+		mgmt_pdu = (struct lora_ll_mgmt_pdu *)p.payload;
+		switch (mgmt_pdu->opcode) {
+
+		case LORA_MGMT_PDU_OP_PRESENCE:
+			//mgmt_pres =
+			//(struct lora_ll_mgmt_presence *)mgmt_pdu->payload;
+			break;
+		case LORA_MGMT_PDU_OP_CONNECT_REQ:
+			//mgmt_conn =
+			//(struct lora_ll_mgmt_connect *)mgmt_pdu->payload;
+			break;
+		}
+	} else {
+		data_pdu = (struct lora_ll_data_pdu *)p.payload;
+		switch (data_pdu->opcode) {
+
+		case LORA_PDU_OP_CONTROL:
+			//data_ctrl =
+			//(struct lora_ll_data_ctrl *)data_pdu->payload;
+			break;
+		case LORA_PDU_OP_DATA_FRAG:
+		case LORA_PDU_OP_DATA_END:
+			memcpy(buffer, data_pdu->payload, len_buffer-3);
+			break;
+		}
+	}
+
+	//After read, put radio on rx mode.
+	radio_rx(RXMODE_SCAN);
+	return len_buffer;
 }
 
 ssize_t hal_comm_write(int sockfd, const void *buffer, size_t count)
