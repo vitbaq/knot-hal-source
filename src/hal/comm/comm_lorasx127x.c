@@ -216,5 +216,34 @@ int hal_comm_accept(int sockfd, void *addr)
 
 int hal_comm_connect(int sockfd, uint64_t *addr)
 {
+	struct lora_ll_mgmt_pdu *opdu =
+		(struct lora_ll_mgmt_pdu *)mgmt.buffer_tx;
+	struct lora_ll_mgmt_connect *payload =
+				(struct lora_ll_mgmt_connect *)opdu->payload;
+	size_t len;
+
+	/* If already has something to write then returns busy */
+	if (mgmt.len_tx != 0)
+		return -EBUSY;
+
+	opdu->opcode = LORA_MGMT_PDU_OP_CONNECT_REQ;
+
+	payload->mac_src = mac_local;
+	payload->mac_dst.address.uint64 = *addr;
+	payload->devaddr = sockfd-1;
+	/*
+	 * Set in payload the addr to be set in client.
+	 * sockfd contains the pipe allocated for the client
+	 * aa_pipes contains the Access Address for each pipe
+	 */
+
+	/* Source address for keepalive message */
+	peers[sockfd-1].mac.address.uint64 = *addr;
+
+	len = sizeof(struct lora_ll_mgmt_connect);
+	len += sizeof(struct lora_ll_mgmt_pdu);
+
+	mgmt.len_tx = len;
+
 	return 0;
 }
