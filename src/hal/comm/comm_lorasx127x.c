@@ -30,6 +30,14 @@
 
 #define DATA_SIZE		64
 
+#define FLAG_TIMEOUT		1000
+
+enum {
+	DATA,
+	CHECK,
+	START
+};
+
 /* GW address */
 static struct lora_mac mac_local = {.address.uint64 = 0};
 
@@ -206,4 +214,52 @@ int hal_comm_accept(int sockfd, void *addr)
 int hal_comm_connect(int sockfd, uint64_t *addr)
 {
 	return 0;
+}
+
+void hal_comm_process(void)
+{
+	static int sockIndex = 1;
+	static int state = DATA;
+
+	static unsigned long time_start;
+
+	switch (state) {
+	case DATA:
+		/*
+		 * Check if peer has something to send and
+		 * the radio don't receive anything
+		 */
+		if (peers[sockIndex-1].len_tx &&
+					!radio_irq_flag(IRQ_LORA_RXDONE_MASK)) {
+			time_start = hal_time_ms();
+			write_data_radio(sockIndex);
+			state = CHECK;
+		} else {
+			sockIndex++;
+			if (sockIndex > CONNECTION_COUNTER)
+				sockIndex = 1;
+		}
+		break;
+	case CHECK:
+		//Check if TX is finished or timeout occurred
+		if (radio_irq_flag(IRQ_LORA_TXDONE_MASK)) {
+			state = START;
+		} else if (hal_timeout(hal_time_ms(),
+						time_start, FLAG_TIMEOUT) > 0) {
+			state = DATA;
+		}
+		break;
+	case START:
+		//Clear peer tx buffer
+		peers[sockIndex-1].len_tx = 0;
+
+		//After a transmission put radio on rx mode
+		radio_rx(RXMODE_SCAN);
+		state = DATA;
+
+		sockIndex++;
+		if (sockIndex > CONNECTION_COUNTER)
+			sockIndex = 1;
+		break;
+	}
 }
