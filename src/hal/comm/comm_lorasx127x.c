@@ -39,6 +39,11 @@ struct lora_data{
 
 static struct lora_data peers[MAX_PEERS];
 
+/* ARRAY SIZE */
+#define CONNECTION_COUNTER	((int) (sizeof(peers) \
+				 / sizeof(peers[0])))
+
+
 static void init_peers(void)
 {
 	int i;
@@ -48,6 +53,21 @@ static void init_peers(void)
 		peers[i].len_tx = 0;
 		peers[i].seqnumber_tx = 0;
 	}
+}
+
+static int alloc_peer(void)
+{
+	int i;
+
+	for (i = 0; i < CONNECTION_COUNTER; i++) {
+		if (peers[i].sock == -1) {
+			memset(&peers[i], 0, sizeof(peers[0]));
+			peers[i].sock = i + 1;
+			return peers[i].sock;
+		}
+	}
+
+	return -1;
 }
 
 
@@ -84,7 +104,22 @@ int hal_comm_deinit(void)
 
 int hal_comm_socket(int domain, int protocol)
 {
-	return 0;
+	int retval;
+
+	if (domain != HAL_COMM_PF_LORA)
+		return -EPERM;			//TODO: change error
+
+	switch (protocol) {
+
+	case HAL_COMM_PROTO_RAW:
+		retval = alloc_peer();
+		if (retval < 0)
+			return -EUSERS;
+
+		return retval;
+	default:
+		return -EINVAL;
+	}
 }
 
 int hal_comm_close(int sockfd)
