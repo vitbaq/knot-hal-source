@@ -89,6 +89,33 @@ static int alloc_peer(void)
 	return -1;
 }
 
+static int write_data_radio(int sockfd)
+{
+	struct lora_io_pack p;
+
+	p.id = sockfd;
+
+	memcpy(p.payload, peers[sockfd-1].buffer_tx, peers[sockfd-1].len_tx);
+
+	radio_tx((uint8_t *)&p, peers[sockfd-1].len_tx);
+
+	return 0;
+}
+
+static int write_mgmt_radio(void)
+{
+	struct lora_io_pack p;
+
+	p.id = 0;
+
+	memcpy(p.payload, mgmt.buffer_tx, mgmt.len_tx);
+
+	radio_tx((uint8_t *)&p, mgmt.len_tx);
+	mgmt.len_tx = 0;
+
+	return 0;
+}
+
 
 int hal_comm_init(const char *pathname, const void *params)
 {
