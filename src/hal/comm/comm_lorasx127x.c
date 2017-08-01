@@ -31,6 +31,17 @@ struct lora_data{
 
 static struct lora_data peers[MAX_PEERS];
 
+static void init_peers(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_PEERS; i++) {
+		peers[i].sock = -1;
+		peers[i].len_tx = 0;
+		peers[i].seqnumber_tx = 0;
+	}
+}
+
 
 int hal_comm_init(const char *pathname, const void *params)
 {
@@ -47,6 +58,9 @@ int hal_comm_init(const char *pathname, const void *params)
 
 	//Init radio registers
 	radio_init();
+
+	//Init peers.
+	init_peers();
 
 	//Put radio on rx mode.
 	radio_rx(RXMODE_SCAN);
