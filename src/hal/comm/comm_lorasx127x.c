@@ -118,6 +118,10 @@ int hal_comm_init(const char *pathname, const void *params)
 
 int hal_comm_deinit(void)
 {
+	init_peers();
+
+	//Put radio on sleep mode.
+	radio_sleep();
 	return 0;
 }
 
@@ -143,6 +147,12 @@ int hal_comm_socket(int domain, int protocol)
 
 int hal_comm_close(int sockfd)
 {
+	if (sockfd >= 1 && sockfd <= 255 && peers[sockfd-1].sock != -1) {
+		/*TODO: Send disconnect packet */
+		peers[sockfd-1].sock = -1;
+		peers[sockfd-1].len_tx = 0;
+	}
+
 	return 0;
 }
 
