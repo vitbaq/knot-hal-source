@@ -134,7 +134,14 @@ ssize_t hal_comm_read(int sockfd, void *buffer, size_t count)
 
 ssize_t hal_comm_write(int sockfd, const void *buffer, size_t count)
 {
-	return 0;
+	if (peers[sockfd-1].len_tx != 0)
+		return -EBUSY;
+
+	/* Copy data to be write in tx buffer */
+	memcpy(peers[sockfd-1].buffer_tx, buffer, count);
+	peers[sockfd-1].len_tx = count;
+
+	return count;
 }
 
 int hal_comm_listen(int sockfd)
