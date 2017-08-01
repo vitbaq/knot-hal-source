@@ -40,8 +40,26 @@ struct lora_data{
 static struct lora_data peers[MAX_PEERS];
 
 
-int hal_comm_init(const char *pathname, void *params)
+int hal_comm_init(const char *pathname, const void *params)
 {
+	const struct lora_mac *mac = (const struct lora_mac *)params;
+
+	/* Radio default config:
+	 *	freq: 902.3    | tx pow: 27 | spreadfactor: 9
+	 *	bandwidth: 125 | cr: 0 | ih: 0 | noCRC: 1
+	 */
+	radio_set_config(902300000, 27, SF9, BW125, 0, 0, 1);
+
+	//Init gpio, spi and time.
+	hal_init();
+
+	//Init radio registers
+	radio_init();
+
+	//Put radio on rx mode.
+	radio_rx(RXMODE_SCAN);
+
+	mac_local.address.uint64 = mac->address.uint64;
 	return 0;
 }
 
