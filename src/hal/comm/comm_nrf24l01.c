@@ -1049,6 +1049,11 @@ int hal_comm_connect(int sockfd, uint64_t *addr)
 	return 0;
 }
 
+void hal_comm_process(void)
+{
+
+}
+
 int nrf24_str2mac(const char *str, struct nrf24_mac *mac)
 {
 	/* Parse the input string into 8 bytes */
