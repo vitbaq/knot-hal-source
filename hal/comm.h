@@ -51,6 +51,9 @@ int hal_comm_accept(int sockfd, void *addr);
 /* Blocking operation. Returns -ETIMEOUT */
 int hal_comm_connect(int sockfd, uint64_t *addr);
 
+/* Process procedures on comm */
+void hal_comm_process(void);
+
 #ifdef __cplusplus
 }
 #endif

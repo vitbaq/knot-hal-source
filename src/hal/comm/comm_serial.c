@@ -72,3 +72,8 @@ int hal_comm_connect(int sockfd, uint64_t *addr)
 
 	return -ENOSYS;
 }
+
+void hal_comm_process(void)
+{
+	
+}
