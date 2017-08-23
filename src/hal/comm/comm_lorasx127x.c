@@ -61,6 +61,7 @@ static struct lora_data peers[MAX_PEERS];
 #define CONNECTION_COUNTER	((int) (sizeof(peers) \
 				 / sizeof(peers[0])))
 
+int fd_dio0;
 
 static void init_peers(void)
 {
@@ -115,6 +116,13 @@ int hal_comm_init(const char *pathname, const void *params)
 	//Init gpio, spi and time.
 	hal_init();
 
+	//Get gpio fd
+	fd_dio0 = init_gpio_fd();
+
+	if (fd_dio0 < 0) {
+		return -1;
+	}
+
 	//Init radio registers
 	radio_init();
 
@@ -125,7 +133,8 @@ int hal_comm_init(const char *pathname, const void *params)
 	radio_rx(RXMODE_SCAN);
 
 	mac_local.address.uint64 = mac->address.uint64;
-	return 0;
+
+	return fd_dio0;
 }
 
 int hal_comm_deinit(void)
