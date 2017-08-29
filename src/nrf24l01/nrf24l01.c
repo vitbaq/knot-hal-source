@@ -198,7 +198,8 @@ int8_t nrf24l01_init(const char *dev, uint8_t tx_pwr)
 
 	/* Set device to standby-I mode */
 	value = nrf24reg_read(spi_fd, NRF24_CONFIG) & ~NRF24_CONFIG_MASK;
-	value |= NRF24_CFG_MASK_RX_DR | NRF24_CFG_MASK_TX_DS;
+	value &= ~NRF24_CFG_MASK_RX_DR;
+	value |= NRF24_CFG_MASK_TX_DS;
 	value |= NRF24_CFG_MASK_MAX_RT | NRF24_CFG_EN_CRC;
 	value |= NRF24_CFG_CRCO | NRF24_CFG_PWR_UP;
 	nrf24reg_write(spi_fd, NRF24_CONFIG, value);
