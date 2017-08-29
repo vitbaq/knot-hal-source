@@ -38,6 +38,8 @@
 #define MIN(a,b)			(((a) < (b)) ? (a) : (b))
 #endif
 
+static int irqfd;
+static guint irqwatch;
 static int mgmtfd;
 static guint mgmtwatch;
 static guint dbus_id;
@@ -963,15 +965,40 @@ static gboolean read_idle(gpointer user_data)
 	return TRUE;
 }
 
+static gboolean test_irq(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	char data_dummy[10];
+	GError *gerr = NULL;
+//	GIOStatus status;
+	gsize rbytes;
+
+	if (!(cond & G_IO_PRI))
+		return FALSE;
+	g_io_channel_seek_position(io, 0, G_SEEK_SET, 0 );
+	/*status = */g_io_channel_read_chars(io, data_dummy, sizeof(data_dummy)-1,
+								&rbytes, &gerr);
+
+	hal_log_info("TEST_IRQ");
+	return TRUE;
+}
+
+static void test_destroy(gpointer user_data)
+{
+	hal_log_info("TEST_DESTROY");
+	close(irqfd);
+}
+
 static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,
 						const struct nrf24_mac *mac)
 {
-	int err;
+	GIOCondition cond = G_IO_PRI | G_IO_ERR;
+	GIOChannel *io;
 
-	err = hal_comm_init("NRF0", mac);
-	if (err < 0) {
-		hal_log_error("Cannot init NRF0 radio. (%d)", err);
-		return err;
+	irqfd = hal_comm_init("NRF0", mac);
+	if (irqfd < 0) {
+		hal_log_error("Cannot init NRF0 radio. (%d)", irqfd);
+		return irqfd;
 	}
 
 	mgmtfd = hal_comm_socket(HAL_COMM_PF_NRF24, HAL_COMM_PROTO_MGMT);
@@ -979,6 +1006,16 @@ static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,
 		hal_log_error("Cannot create socket for radio (%d)", mgmtfd);
 		goto done;
 	}
+
+	io = g_io_channel_unix_new(irqfd);
+
+	irqwatch = g_io_add_watch_full(io,
+					G_PRIORITY_HIGH,
+					cond,
+					test_irq,
+					NULL,
+					test_destroy);
+	g_io_channel_unref(io);
 
 	mgmtwatch = g_idle_add(read_idle, NULL);
 	hal_log_info("Radio initialized");
@@ -1006,6 +1043,8 @@ static void radio_stop(void)
 	hal_comm_close(mgmtfd);
 	if (mgmtwatch)
 		g_source_remove(mgmtwatch);
+	if (irqwatch)
+		g_source_remove(irqwatch);
 	hal_comm_deinit();
 }
 
