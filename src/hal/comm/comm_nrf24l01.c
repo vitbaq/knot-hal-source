@@ -133,6 +133,9 @@ static uint8_t aa_pipe0[5] = {0x8D, 0xD9, 0xBE, 0x96, 0xDE};
 /* Global to save driver index */
 static int driverIndex = -1;
 
+/* Global to save irq gpio file descriptor */
+static int irq_gpio_fd = 0;
+
 /*
  * Channel to management and raw data
  *
@@ -789,9 +792,13 @@ int hal_comm_init(const char *pathname, const void *params)
 	if (driverIndex < 0)
 		return driverIndex;
 
+	irq_gpio_fd = phy_ioctl(driverIndex, NRF24_CMD_GET_GPIO_FD, NULL);
+	if (irq_gpio_fd < 0)
+		return -EPERM;
+
 	mac_local.address.uint64 = mac->address.uint64;
 
-	return 0;
+	return irq_gpio_fd;
 }
 
 int hal_comm_deinit(void)
