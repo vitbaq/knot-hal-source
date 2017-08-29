@@ -33,6 +33,11 @@ void disable(void)
 	PORTB &= ~(1 << CE);
 }
 
+int get_irq_gpio_fd(void)
+{
+	return 0;
+}
+
 int io_setup(const char *dev)
 {
 	/*

@@ -373,11 +373,19 @@ int8_t nrf24l01_close_pipe(int8_t spi_fd, int8_t pipe)
 }
 
 /*
- * nrf24l01_set_ptx:
- * set pipe to send data;
- * the radio will be the Primary Transmitter (PTX).
- * See page 31 of nRF24L01_Product_Specification_v2_0.pdf
- */
+* nrf24l01_get_gpio_fd:
+* get irq gpio file descriptor.
+*/
+int8_t nrf24l01_get_gpio_fd(void)
+{
+	return get_irq_gpio_fd();
+}
+
+/* nrf24l01_set_ptx:
+* set pipe to send data;
+* the radio will be the Primary Transmitter (PTX).
+* See page 31 of nRF24L01_Product_Specification_v2_0.pdf
+*/
 int8_t nrf24l01_set_ptx(int8_t spi_fd, uint8_t pipe)
 {
 	/* Out of range? */

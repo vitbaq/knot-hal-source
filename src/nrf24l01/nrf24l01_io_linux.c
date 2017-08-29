@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include "nrf24l01_io.h"
+#include "hal/gpio_sysfs.h"
 #include "spi.h"
 
 #define CE	25
@@ -77,6 +78,11 @@ void enable(void)
 void disable(void)
 {
 	GPIO_CLR = (1<<CE);
+}
+
+int get_irq_gpio_fd(void)
+{
+	return hal_gpio_get_fd(IRQ, HAL_GPIO_RISING);
 }
 
 int io_setup(const char *dev)
