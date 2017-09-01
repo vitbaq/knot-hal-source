@@ -108,6 +108,10 @@ int io_setup(const char *dev)
 	OUT_GPIO(CE);
 
 	disable();
+
+	hal_gpio_setup();
+	hal_gpio_pin_mode(IRQ, HAL_GPIO_INPUT);
+
 	return spi_init(dev);
 }
 
