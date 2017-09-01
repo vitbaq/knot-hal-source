@@ -18,6 +18,7 @@
 #include "spi.h"
 
 #define CE	25
+#define IRQ	24
 
 #define LOW	0
 #define HIGH	1
