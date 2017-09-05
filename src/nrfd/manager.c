@@ -1364,7 +1364,7 @@ int manager_start(const char *file, const char *host, int port,
 
 void manager_stop(void)
 {
-	dbus_on_close(dbus_id);
-	radio_stop();
 	g_hash_table_destroy(peer_bcast_table);
+	radio_stop();
+	dbus_on_close(dbus_id);
 }
