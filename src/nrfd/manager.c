@@ -970,7 +970,7 @@ static gboolean read_idle(gpointer user_data)
 static gboolean test_irq(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
-	hal_log_info("TEST_IRQ");
+	printf("test_irq\n");
 	char data_dummy[10];
 	GError *gerr = NULL;
 //	GIOStatus status;
@@ -978,11 +978,11 @@ static gboolean test_irq(GIOChannel *io, GIOCondition cond,
 
 	if (!(cond & G_IO_PRI))
 		return FALSE;
+
 	g_io_channel_seek_position(io, 0, G_SEEK_SET, 0 );
 	/*status = */g_io_channel_read_chars(io, data_dummy, sizeof(data_dummy)-1,
 								&rbytes, &gerr);
 
-	hal_log_info("TEST_IRQ");
 	return TRUE;
 }
 
@@ -1018,6 +1018,8 @@ static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,
 					test_irq,
 					NULL,
 					test_destroy);
+
+	g_io_channel_set_close_on_unref(io, FALSE);
 	g_io_channel_unref(io);
 
 	mgmtwatch = g_idle_add(read_idle, NULL);
