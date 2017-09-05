@@ -845,6 +845,7 @@ done:
 							kwatch_io_read,
 							&peers[position],
 							kwatch_io_destroy);
+		g_io_channel_set_close_on_unref(io, FALSE);
 		g_io_channel_unref(io);
 
 		count_clients++;
