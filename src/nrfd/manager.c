@@ -748,6 +748,7 @@ static gboolean kwatch_io_read(GIOChannel *io, GIOCondition cond,
 
 static int8_t evt_presence(struct mgmt_nrf24_header *mhdr)
 {
+	hal_log_info("EVT_PRESENCE");
 	GIOCondition cond = G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL;
 	GIOChannel *io;
 	int8_t position;
@@ -938,6 +939,7 @@ static int8_t mgmt_read(void)
 		return -EPROTO;
 
 	switch (mhdr->opcode) {
+		hal_log_info("switch mgmt");
 
 	case MGMT_EVT_NRF24_BCAST_PRESENCE:
 		evt_presence(mhdr);
@@ -968,6 +970,7 @@ static gboolean read_idle(gpointer user_data)
 static gboolean test_irq(GIOChannel *io, GIOCondition cond,
 							gpointer user_data)
 {
+	hal_log_info("TEST_IRQ");
 	char data_dummy[10];
 	GError *gerr = NULL;
 //	GIOStatus status;
