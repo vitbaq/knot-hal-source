@@ -183,8 +183,8 @@ int main(int argc, char *argv[])
 	g_main_loop_run(main_loop);
 
 done:
-	g_source_remove(watch_id);
 	inotify_rm_watch(inotifyFD, wd);
+	g_source_remove(watch_id);
 	//g_io_channel_unref(inotify_io);
 
 	manager_stop();
