@@ -988,6 +988,7 @@ static gboolean test_irq(GIOChannel *io, GIOCondition cond,
 
 static void test_destroy(gpointer user_data)
 {
+	printf("test_destroy\n");
 	hal_log_info("TEST_DESTROY");
 	close(irqfd);
 }
