@@ -336,7 +336,7 @@ static int read_mgmt(int spi_fd)
 	ilen = phy_read(spi_fd, &p, NRF24_MTU);
 	if (ilen < 0)
 		return -EAGAIN;
-
+	printf("READ_MGMT\n");
 	/* If already has something in rx buffer then return BUSY */
 	if (mgmt.len_rx != 0)
 		return -EBUSY;
@@ -504,7 +504,7 @@ static int read_raw(int spi_fd, int sockfd)
 	 * on success, the number of bytes read is returned
 	 */
 	while ((ilen = phy_read(spi_fd, &p, NRF24_MTU)) > 0) {
-
+		printf("READ_RAW\n");
 		/* Initiator/acceptor: reset anchor */
 		peers[sockfd-1].keepalive_anchor = hal_time_ms();
 
@@ -937,6 +937,7 @@ ssize_t hal_comm_read(int sockfd, void *buffer, size_t count)
 	if (sockfd == 0) {
 		/* If has something to read */
 		if (mgmt.len_rx != 0) {
+			printf("hal_comm_read - mgmt\n");
 			/*
 			 * If the amount of bytes available
 			 * to be read is greather than count
