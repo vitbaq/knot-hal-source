@@ -648,8 +648,10 @@ static int unix_connect(void)
 	strncpy(addr.sun_path + 1, KNOTD_UNIX_ADDRESS,
 					strlen(KNOTD_UNIX_ADDRESS));
 
-	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1)
+	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
+		close(sock);
 		return -errno;
+	}
 
 	return sock;
 }
