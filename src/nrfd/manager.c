@@ -995,7 +995,6 @@ static void test_destroy(gpointer user_data)
 {
 	printf("test_destroy\n");
 	hal_log_info("TEST_DESTROY");
-	close(irqfd);
 }
 
 static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,

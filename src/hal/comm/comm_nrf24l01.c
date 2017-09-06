@@ -817,6 +817,9 @@ int hal_comm_deinit(void)
 	}
 
 	pipe_bitmask = 0b00000001;
+	/* Close irq file descriptor */
+	close(irq_gpio_fd);
+
 	/* Close driver */
 	err = phy_close(driverIndex);
 	if (err < 0)
