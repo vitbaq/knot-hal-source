@@ -700,8 +700,10 @@ static int tcp_connect(void)
 	}
 
 	err = connect(sock, (struct sockaddr *) &server, sizeof(server));
-	if (err < 0)
+	if (err < 0){
+		close(sock);
 		return -errno;
+	}
 
 	return sock;
 }
