@@ -712,7 +712,7 @@ static void kwatch_io_destroy(gpointer user_data)
 {
 	struct peer *p = (struct peer *) user_data;
 	hal_comm_close(p->socket_fd);
-	close(p->ksock);
+	//close(p->ksock);
 	p->socket_fd = -1;
 	p->kwatch = 0;
 	count_clients--;
