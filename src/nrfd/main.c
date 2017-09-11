@@ -169,7 +169,7 @@ int main(int argc, char *argv[])
 	/* Setting gio channel to watch inotify fd*/
 	inotify_io = g_io_channel_unix_new(inotifyFD);
 	watch_id = g_io_add_watch(inotify_io, G_IO_IN, inotify_cb, NULL);
-	g_io_channel_set_close_on_unref(inotify_io, TRUE);
+	g_io_channel_unref(inotify_io);
 
 	if (opt_detach) {
 		if (daemon(0, 0)) {
@@ -182,9 +182,8 @@ int main(int argc, char *argv[])
 	g_main_loop_run(main_loop);
 
 done:
-	g_source_remove(watch_id);
 	inotify_rm_watch(inotifyFD, wd);
-	g_io_channel_unref(inotify_io);
+	g_source_remove(watch_id);
 
 	manager_stop();
 

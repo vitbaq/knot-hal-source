@@ -646,8 +646,10 @@ static int unix_connect(void)
 	strncpy(addr.sun_path + 1, KNOTD_UNIX_ADDRESS,
 					strlen(KNOTD_UNIX_ADDRESS));
 
-	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1)
+	if (connect(sock, (struct sockaddr *) &addr, sizeof(addr)) == -1) {
+		close(sock);
 		return -errno;
+	}
 
 	return sock;
 }
@@ -696,8 +698,10 @@ static int tcp_connect(void)
 	}
 
 	err = connect(sock, (struct sockaddr *) &server, sizeof(server));
-	if (err < 0)
+	if (err < 0){
+		close(sock);
 		return -errno;
+	}
 
 	return sock;
 }
@@ -707,7 +711,6 @@ static void kwatch_io_destroy(gpointer user_data)
 	struct peer *p = (struct peer *) user_data;
 
 	hal_comm_close(p->socket_fd);
-	close(p->ksock);
 	p->socket_fd = -1;
 	p->kwatch = 0;
 	count_clients--;
@@ -1320,7 +1323,7 @@ int manager_start(const char *file, const char *host, int port,
 
 void manager_stop(void)
 {
-	dbus_on_close(dbus_id);
-	radio_stop();
 	g_hash_table_destroy(peer_bcast_table);
+	radio_stop();
+	dbus_on_close(dbus_id);
 }
