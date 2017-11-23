@@ -388,7 +388,7 @@ static int write_mgmt(int spi_fd)
 static int read_mgmt(int spi_fd)
 {
 	struct nrf24_io_pack p;
-	struct nrf24_ll_mgmt_pdu *ipdu = (struct nrf24_ll_mgmt_pdu *)p.payload;
+	struct nrf24_ll_mgmt_pdu *ipdu;
 	struct mgmt_evt_nrf24_bcast_presence *mgmtev_bcast;
 	struct mgmt_evt_nrf24_connected *mgmtev_cn;
 	struct mgmt_nrf24_header *mgmtev_hdr;
@@ -397,8 +397,9 @@ static int read_mgmt(int spi_fd)
 	ssize_t ilen;
 
 	/* Read from management pipe */
-	p.pipe = 0;
-	p.payload[0] = 0;
+	memset(&p, 0, sizeof(p));
+
+	ipdu = (struct nrf24_ll_mgmt_pdu *)p.payload;
 	/* Read data */
 	ilen = phy_read(spi_fd, &p, NRF24_MTU);
 	if (ilen <= 0)
