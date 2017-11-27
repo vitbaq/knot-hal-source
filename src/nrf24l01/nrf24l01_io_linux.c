@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include "hal/gpio_sysfs.h"
 #include "nrf24l01_io.h"
 #include "spi_bus.h"
 
@@ -59,34 +60,22 @@ void delay_us(float us)
 
 void enable(void)
 {
-	GPIO_SET = (1<<CE);
+	hal_gpio_digital_write(CE, HAL_GPIO_HIGH);
 	usleep(TPECE2CSN);
 }
 
 void disable(void)
 {
-	GPIO_CLR = (1<<CE);
+	hal_gpio_digital_write(CE, HAL_GPIO_LOW);
 }
 
 int io_setup(const char *dev)
 {
-	int mem_fd;
 
-	mem_fd = open("/dev/mem", O_RDWR|O_SYNC);
-	if (mem_fd < 0)
-		return -errno;
-
-	gpio = (volatile unsigned *)mmap(NULL, BLOCK_SIZE,
-						PROT_READ | PROT_WRITE,
-						MAP_SHARED, mem_fd, GPIO_BASE);
-	close(mem_fd);
-
-	if (gpio == MAP_FAILED)
-		return -errno;
-
-	GPIO_CLR = (1<<CE);
-	INP_GPIO(CE);
-	OUT_GPIO(CE);
+	hal_gpio_setup();
+	//hal_gpio_digital_write(CE, HAL_GPIO_LOW);
+	//hal_gpio_pin_mode(CE, HAL_GPIO_INPUT);
+	hal_gpio_pin_mode(CE, HAL_GPIO_OUTPUT);
 
 	disable();
 	return spi_bus_init(dev);
@@ -95,6 +84,6 @@ int io_setup(const char *dev)
 void io_reset(int spi_fd)
 {
 	disable();
-	munmap((void*)gpio, BLOCK_SIZE);
+	hal_gpio_unmap();
 	spi_bus_deinit(spi_fd);
 }
