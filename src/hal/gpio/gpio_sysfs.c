@@ -280,6 +280,7 @@ int hal_gpio_pin_mode(uint8_t gpio, uint8_t mode)
 
 void hal_gpio_digital_write(uint8_t gpio, uint8_t value)
 {
+	printf("GPIO (%d) = %02x\n", gpio, gpio_map[gpio-1]);
 	if (CHK_BIT(gpio_map[gpio-1], BIT_DIRECTION)
 		&& CHK_BIT(gpio_map[gpio-1], BIT_INITIALIZED))
 		gpio_write(gpio, value);

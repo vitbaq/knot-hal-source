@@ -83,6 +83,7 @@ int io_setup(const char *dev)
 
 void io_reset(int spi_fd)
 {
+	printf("io_reset\n");
 	disable();
 	hal_gpio_unmap();
 	spi_bus_deinit(spi_fd);
