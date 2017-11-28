@@ -159,6 +159,7 @@ static int gpio_write(int pin, int value)
 		/* Failed to write value! */
 		err = errno;
 
+	printf("%s = %d, %d\n", path, value, err);
 	close(fd);
 
 	return -err;
