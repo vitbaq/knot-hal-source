@@ -7,6 +7,7 @@
  *
  */
 
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
@@ -85,6 +86,7 @@ static inline int8_t command_data(int8_t spi_fd, uint8_t cmd, void *pd,
 
 static inline void set_standby1(void)
 {
+	printf("disable\n");
 	disable();
 }
 
