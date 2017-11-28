@@ -7,6 +7,7 @@
  *
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -108,7 +109,7 @@ static int nrf24l01_ioctl(int spi_fd, int cmd, void *arg)
 		struct channel ch;
 	} param;
 	int err = -1;
-
+	printf("ioctl\n");
 	/* Set standby to set registers */
 	nrf24l01_set_standby(spi_fd);
 
