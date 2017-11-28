@@ -151,6 +151,7 @@ static int gpio_write(int pin, int value)
 
 	snprintf(path, 30, "/sys/class/gpio/gpio%2d/value", pin);
 	fd = open(path, O_WRONLY);
+	printf("%s = %d, fd = %d\n", path, value, fd);
 	if (fd == -1)
 		/* Failed to open gpio value for writing! */
 		return -errno;
@@ -159,7 +160,7 @@ static int gpio_write(int pin, int value)
 		/* Failed to write value! */
 		err = errno;
 
-	printf("%s = %d, %d\n", path, value, err);
+	//printf("%s = %d, %d\n", path, value, err);
 	close(fd);
 
 	return -err;
