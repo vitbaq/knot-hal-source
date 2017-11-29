@@ -34,11 +34,13 @@
 
 static uint8_t gpio_map[HIGHEST_GPIO];
 
+static uint8_t fd_gpio25 = -1, fd_un25 = -1, fd_direction = -1, fd_value = -1;
+
 static int gpio_export(int pin)
 {
 	char buffer[3], path[35];
 	ssize_t bytes_written;
-	int fd, err = 0;
+	int fd, fd_un, err = 0;
 
 	/* GPIO already exported */
 	snprintf(path, 35, "/sys/class/gpio/gpio%2d", pin);
@@ -50,12 +52,20 @@ static int gpio_export(int pin)
 		/* Failed to open export for writing! */
 		return -errno;
 
+	fd_un = open("/sys/class/gpio/unexport", O_WRONLY);
+	if (fd_un == -1)
+		/* Failed to open unexport for writing! */
+		return -errno;
+	fd_un25 = fd_un;
+
 	bytes_written = snprintf(buffer, 3, "%2d", pin);
 
 	if (write(fd, buffer, bytes_written) == -1)
 		err = errno;
 
-	close(fd);
+	fd_gpio25 = fd;
+
+	//close(fd);
 
 	return -err;
 }
@@ -66,17 +76,20 @@ static int gpio_unexport(int pin)
 	ssize_t bytes_written;
 	int fd, err = 0;
 
-	fd = open("/sys/class/gpio/unexport", O_WRONLY);
-	if (fd == -1)
-		/* Failed to open unexport for writing! */
-		return -errno;
+	// fd = open("/sys/class/gpio/unexport", O_WRONLY);
+	// if (fd == -1)
+	// 	/* Failed to open unexport for writing! */
+	// 	return -errno;
 
 	bytes_written = snprintf(buffer, 3, "%2d", pin);
 
-	if (write(fd, buffer, bytes_written) == -1)
+	if (write(fd_un25, buffer, bytes_written) == -1)
 		err = errno;
 
-	close(fd);
+	close(fd_un25);
+	close(fd_gpio25);
+	close(fd_direction);
+	close(fd_value);
 
 	return -err;
 }
@@ -98,17 +111,20 @@ static int gpio_direction(int pin, int dir)
 	}
 
 	snprintf(path, 35, "/sys/class/gpio/gpio%2d/direction", pin);
-	fd = open(path, O_WRONLY);
-	if (fd == -1)
-		/* Failed to open gpio direction for writing! */
-		return -errno;
 
-	if (write(fd, dir == HAL_GPIO_INPUT ? "in" : "out",
+	if (fd_direction < 0){
+		fd = open(path, O_WRONLY);
+		if (fd == -1)
+			/* Failed to open gpio direction for writing! */
+			return -errno;
+
+		fd_direction = fd;
+	}
+
+	if (write(fd_direction, dir == HAL_GPIO_INPUT ? "in" : "out",
 		dir == HAL_GPIO_INPUT ? 2 : 3) == -1)
 		/* Failed to set direction! */
 		err = errno;
-
-	close(fd);
 
 	return -err;
 }
@@ -120,24 +136,25 @@ static int gpio_read(int pin)
 	int fd;
 
 	snprintf(path, 30, "/sys/class/gpio/gpio%2d/value", pin);
-	fd = open(path, O_RDONLY);
-	if (fd == -1)
-		/* Failed to open gpio value for reading! */
-		return -errno;
 
+	if (fd_value < 0){
+		fd = open(path, O_RDWR);
+		if (fd == -1)
+			/* Failed to open gpio value for reading! */
+			return -errno;
+		fd_value = fd;
+	}
 	/*
 	 * This reading operation returns
 	 * 3 characters wich can be:
 	 * '0', '\n' and '\0' or
 	 * '1', '\n' and '\0'
 	 */
-	if (read(fd, value_str, 3) == -1) {
+	if (read(fd_value, value_str, 3) == -1) {
 		/* Failed to read value! */
 		close(fd);
 		return -errno;
 	}
-
-	close(fd);
 
 	if (value_str[0] == '0' || value_str[0] == '1')
 		return value_str[0] - '0';
@@ -150,18 +167,19 @@ static int gpio_write(int pin, int value)
 	int fd, err = 0;
 
 	snprintf(path, 30, "/sys/class/gpio/gpio%2d/value", pin);
-	fd = open(path, O_WRONLY);
-	printf("%s = %d, fd = %d\n", path, value, fd);
-	if (fd == -1)
-		/* Failed to open gpio value for writing! */
-		return -errno;
 
-	if (write(fd, value == HAL_GPIO_LOW ? "0" : "1", 1) != 1)
+	if (fd_value < 0){
+		fd = open(path, O_RDWR);
+		printf("%s = %d, fd = %d\n", path, value, fd);
+		if (fd == -1)
+			/* Failed to open gpio value for writing! */
+			return -errno;
+		fd_value = fd;
+	}
+
+	if (write(fd_value, value == HAL_GPIO_LOW ? "0" : "1", 1) != 1)
 		/* Failed to write value! */
 		err = errno;
-
-	//printf("%s = %d, %d\n", path, value, err);
-	close(fd);
 
 	return -err;
 }
