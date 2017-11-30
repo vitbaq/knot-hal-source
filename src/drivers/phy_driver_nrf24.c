@@ -126,6 +126,9 @@ static int nrf24l01_ioctl(int spi_fd, int cmd, void *arg)
 		memcpy(&param.ch, arg, sizeof(param.ch));
 		err = nrf24l01_set_channel(spi_fd, param.ch.value, param.ch.ack);
 		break;
+	case NRF24_CMD_GET_GPIO_FD:
+		err = nrf24l01_get_gpio_fd();
+		break;
 	case NRF24_CMD_SET_STANDBY:
 		break;
 	default:
