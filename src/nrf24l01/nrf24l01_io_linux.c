@@ -35,6 +35,11 @@ void disable(void)
 	hal_gpio_digital_write(CE, HAL_GPIO_LOW);
 }
 
+int get_irq_gpio_fd(void)
+{
+	return hal_gpio_get_fd(IRQ, HAL_GPIO_FALLING);
+}
+
 int io_setup(const char *dev)
 {
 

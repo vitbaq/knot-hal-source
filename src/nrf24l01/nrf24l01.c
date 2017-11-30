@@ -353,6 +353,14 @@ int8_t nrf24l01_close_pipe(int8_t spi_fd, int8_t pipe)
 	return 0;
 }
 
+/*
+* nrf24l01_get_gpio_fd:
+* get irq gpio file descriptor.
+*/
+int8_t nrf24l01_get_gpio_fd(void)
+{
+	return get_irq_gpio_fd();
+}
 
 /*
  * nrf24l01_set_ptx:
