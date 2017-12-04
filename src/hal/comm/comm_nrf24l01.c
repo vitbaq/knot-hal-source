@@ -804,112 +804,6 @@ static void presence_connect(int spi_fd)
 	}
 }
 
-static void running(void)
-{
-	struct mgmt_nrf24_header *mgmtev_hdr;
-	struct mgmt_evt_nrf24_disconnected *mgmtev_dc;
-	/* Index peers */
-	static int sockIndex = 1;
-	static unsigned long start;
-
-	switch (running_state) {
-	case START_MGMT:
-		/* Set channel to management channel */
-		phy_ioctl(driverIndex, NRF24_CMD_SET_CHANNEL, &channel_mgmt);
-		/* Start timeout */
-		start = hal_time_ms();
-		/* Go to next state */
-		running_state = MGMT;
-		break;
-	case MGMT:
-
-		read_mgmt(driverIndex);
-		write_mgmt(driverIndex);
-
-		/* Broadcasting/acceptor */
-		if (listen)
-			presence_connect(driverIndex);
-
-		/* Peers connected? */
-		if (pipe_bitmask & PIPE_RAW_BITMASK) {
-			if (hal_timeout(hal_time_ms(), start, MGMT_TIMEOUT) > 0)
-				running_state = START_RAW;
-		}
-		break;
-
-	case START_RAW:
-		/* Set channel to data channel */
-		phy_ioctl(driverIndex, NRF24_CMD_SET_CHANNEL, &channel_raw);
-		/* Start timeout */
-		start = hal_time_ms();
-
-		/* Go to next state */
-		running_state = RAW;
-		break;
-	case RAW:
-
-		/* Start broadcast or scan? */
-#ifdef ARDUINO
-		if (!(pipe_bitmask & PIPE_RAW_BITMASK)) {
-#else
-		if ((pipe_bitmask & PIPE_RAW_BITMASK) != PIPE_RAW_BITMASK) {
-#endif
-			/*Checks for RAW timeout and RTs offset time*/
-			if (hal_timeout(hal_time_ms(), start, raw_timeout) > 0 &&
-			hal_timeout(hal_time_ms(), rt_stamp, (rt_offset)) > 0)
-				running_state = START_MGMT;
-		}
-
-		read_raw(driverIndex);
-
-		/* Check if pipe is allocated */
-		if (peers[sockIndex-1].pipe != -1) {
-			write_raw(driverIndex, sockIndex);
-			rt_stamp = hal_time_ms();
-
-			/*
-			 * If keepalive is enabled
-			 * Check if timeout occurred and generates
-			 * disconnect event
-			 */
-
-			if (check_keepalive(driverIndex, sockIndex) == -ETIMEDOUT &&
-				mgmt.len_rx == 0) {
-
-				mgmtev_hdr = (struct mgmt_nrf24_header *)
-								mgmt.buffer_rx;
-				mgmtev_dc = (struct mgmt_evt_nrf24_disconnected *)
-							mgmtev_hdr->payload;
-
-				mgmtev_hdr->opcode = MGMT_EVT_NRF24_DISCONNECTED;
-
-				mgmtev_dc->mac.address.uint64 =
-					peers[sockIndex-1].mac.address.uint64;
-				mgmt.len_rx = sizeof(*mgmtev_hdr) +
-								sizeof(*mgmtev_dc);
-
-				/* TODO: Send disconnect packet to slave */
-
-				/* Free pipe & resize raw time */
-				CLR_BIT(pipe_bitmask, peers[sockIndex - 1].pipe);
-				peers[sockIndex - 1].pipe = -1;
-				peers[sockIndex - 1].keepalive = 0;
-				phy_ioctl(driverIndex, NRF24_CMD_RESET_PIPE,
-								&sockIndex);
-				raw_timeout = new_raw_time();
-			}
-		}
-
-		sockIndex++;
-		/* Resets sockIndex if sockIndex > CONNECTION_COUNTER */
-		if (sockIndex > CONNECTION_COUNTER)
-			sockIndex = 1;
-
-		break;
-
-	}
-}
-
 /* Global functions */
 int hal_comm_init(const char *pathname, const void *params)
 {
@@ -1071,9 +965,6 @@ ssize_t hal_comm_read(int sockfd, void *buffer, size_t count)
 {
 	size_t length = 0;
 
-	/* Run background procedures */
-	running();
-
 	if (sockfd < 0 || sockfd > 5 || count == 0)
 		return -EINVAL;
 
@@ -1116,10 +1007,6 @@ ssize_t hal_comm_read(int sockfd, void *buffer, size_t count)
 
 ssize_t hal_comm_write(int sockfd, const void *buffer, size_t count)
 {
-
-	/* Run background procedures */
-	running();
-
 	if (sockfd < 1 || sockfd > 5 || count == 0 || count > DATA_SIZE)
 		return -EINVAL;
 
@@ -1156,8 +1043,6 @@ int hal_comm_accept(int sockfd, void *addr)
 			(struct mgmt_evt_nrf24_connected *)mgmtev_hdr->payload;
 	struct addr_pipe p_addr;
 	int pipe;
-	/* Run background procedures */
-	running();
 
 	if (mgmt.len_rx == 0)
 		return -EAGAIN;
@@ -1211,9 +1096,6 @@ int hal_comm_connect(int sockfd, uint64_t *addr)
 				(struct nrf24_ll_mgmt_connect *) opdu->payload;
 	size_t len;
 
-	/* Run background procedures */
-	running();
-
 	/* If already has something to write then returns busy */
 	if (mgmt.len_tx != 0)
 		return -EBUSY;
@@ -1252,6 +1134,112 @@ int hal_comm_connect(int sockfd, uint64_t *addr)
 	mgmt.len_tx = len;
 
 	return 0;
+}
+
+void hal_comm_process(void)
+{
+	struct mgmt_nrf24_header *mgmtev_hdr;
+	struct mgmt_evt_nrf24_disconnected *mgmtev_dc;
+	/* Index peers */
+	static int sockIndex = 1;
+	static unsigned long start;
+
+	switch (running_state) {
+	case START_MGMT:
+		/* Set channel to management channel */
+		phy_ioctl(driverIndex, NRF24_CMD_SET_CHANNEL, &channel_mgmt);
+		/* Start timeout */
+		start = hal_time_ms();
+		/* Go to next state */
+		running_state = MGMT;
+		break;
+	case MGMT:
+
+		read_mgmt(driverIndex);
+		write_mgmt(driverIndex);
+
+		/* Broadcasting/acceptor */
+		if (listen)
+			presence_connect(driverIndex);
+
+		/* Peers connected? */
+		if (pipe_bitmask & PIPE_RAW_BITMASK) {
+			if (hal_timeout(hal_time_ms(), start, MGMT_TIMEOUT) > 0)
+				running_state = START_RAW;
+		}
+		break;
+
+	case START_RAW:
+		/* Set channel to data channel */
+		phy_ioctl(driverIndex, NRF24_CMD_SET_CHANNEL, &channel_raw);
+		/* Start timeout */
+		start = hal_time_ms();
+
+		/* Go to next state */
+		running_state = RAW;
+		break;
+	case RAW:
+
+		/* Start broadcast or scan? */
+#ifdef ARDUINO
+		if (!(pipe_bitmask & PIPE_RAW_BITMASK)) {
+#else
+		if ((pipe_bitmask & PIPE_RAW_BITMASK) != PIPE_RAW_BITMASK) {
+#endif
+			/*Checks for RAW timeout and RTs offset time*/
+			if (hal_timeout(hal_time_ms(), start, raw_timeout) > 0 &&
+			hal_timeout(hal_time_ms(), rt_stamp, (rt_offset)) > 0)
+				running_state = START_MGMT;
+		}
+
+		read_raw(driverIndex);
+
+		/* Check if pipe is allocated */
+		if (peers[sockIndex-1].pipe != -1) {
+			write_raw(driverIndex, sockIndex);
+			rt_stamp = hal_time_ms();
+
+			/*
+			 * If keepalive is enabled
+			 * Check if timeout occurred and generates
+			 * disconnect event
+			 */
+
+			if (check_keepalive(driverIndex, sockIndex) == -ETIMEDOUT &&
+				mgmt.len_rx == 0) {
+
+				mgmtev_hdr = (struct mgmt_nrf24_header *)
+								mgmt.buffer_rx;
+				mgmtev_dc = (struct mgmt_evt_nrf24_disconnected *)
+							mgmtev_hdr->payload;
+
+				mgmtev_hdr->opcode = MGMT_EVT_NRF24_DISCONNECTED;
+
+				mgmtev_dc->mac.address.uint64 =
+					peers[sockIndex-1].mac.address.uint64;
+				mgmt.len_rx = sizeof(*mgmtev_hdr) +
+								sizeof(*mgmtev_dc);
+
+				/* TODO: Send disconnect packet to slave */
+
+				/* Free pipe & resize raw time */
+				CLR_BIT(pipe_bitmask, peers[sockIndex - 1].pipe);
+				peers[sockIndex - 1].pipe = -1;
+				peers[sockIndex - 1].keepalive = 0;
+				phy_ioctl(driverIndex, NRF24_CMD_RESET_PIPE,
+								&sockIndex);
+				raw_timeout = new_raw_time();
+			}
+		}
+
+		sockIndex++;
+		/* Resets sockIndex if sockIndex > CONNECTION_COUNTER */
+		if (sockIndex > CONNECTION_COUNTER)
+			sockIndex = 1;
+
+		break;
+
+	}
 }
 
 int nrf24_str2mac(const char *str, struct nrf24_mac *mac)

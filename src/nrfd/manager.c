@@ -39,6 +39,7 @@
 #endif
 
 static int mgmtfd;
+static guint processwatch;
 static guint mgmtwatch;
 static guint dbus_id;
 static struct in_addr inet_address;
@@ -915,6 +916,12 @@ static int8_t evt_disconnected(struct mgmt_nrf24_header *mhdr)
 	return 0;
 }
 
+static gboolean process_idle(gpointer user_data)
+{
+	hal_comm_process();
+	return TRUE;
+}
+
 /* Read RAW from Clients */
 static int8_t clients_read(void)
 {
@@ -1015,6 +1022,8 @@ static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,
 		goto done;
 	}
 
+	processwatch = g_idle_add(process_idle, NULL);
+
 	mgmtwatch = g_idle_add(read_idle, NULL);
 	hal_log_info("Radio initialized");
 
@@ -1041,6 +1050,8 @@ static void radio_stop(void)
 	hal_comm_close(mgmtfd);
 	if (mgmtwatch)
 		g_source_remove(mgmtwatch);
+	if (processwatch)
+		g_source_remove(processwatch);
 	hal_comm_deinit();
 }
 
