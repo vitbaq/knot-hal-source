@@ -110,7 +110,8 @@ static int nrf24l01_ioctl(int spi_fd, int cmd, void *arg)
 	int err = -1;
 
 	/* Set standby to set registers */
-	nrf24l01_set_standby(spi_fd);
+	if (cmd != NRF24_CMD_GET_PIPE_W_DATA)
+		nrf24l01_set_standby(spi_fd);
 
 	switch (cmd) {
 	/* Command to set address pipe */
@@ -129,13 +130,16 @@ static int nrf24l01_ioctl(int spi_fd, int cmd, void *arg)
 	case NRF24_CMD_GET_GPIO_FD:
 		err = nrf24l01_get_gpio_fd();
 		break;
+	case NRF24_CMD_GET_PIPE_W_DATA:
+		err = nrf24l01_prx_pipe_available(spi_fd);
+		break;
 	case NRF24_CMD_SET_STANDBY:
 		break;
 	default:
 		break;
 	}
 
-	if (cmd != NRF24_CMD_SET_STANDBY)
+	if (cmd != NRF24_CMD_SET_STANDBY || cmd != NRF24_CMD_GET_PIPE_W_DATA)
 		nrf24l01_set_prx(spi_fd);
 
 	return err;
