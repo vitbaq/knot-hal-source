@@ -14,6 +14,8 @@
 extern "C" {
 #endif
 
+#include "hal/poll.h"
+
 /* Domain: selects radio technology */
 #define HAL_COMM_PF_NRF24		1
 #define HAL_COMM_PF_SERIAL		2
@@ -53,6 +55,8 @@ int hal_comm_connect(int sockfd, uint64_t *addr);
 
 /* Process procudures on comm */
 void hal_comm_process(void);
+
+int hal_comm_poll(struct hal_pollfd *fds, int nfds);
 
 #ifdef __cplusplus
 }

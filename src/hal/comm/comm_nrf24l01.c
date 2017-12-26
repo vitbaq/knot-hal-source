@@ -24,6 +24,7 @@
 #include "hal/nrf24.h"
 #include "hal/comm.h"
 #include "hal/time.h"
+#include "hal/poll.h"
 #include "nrf24l01.h"
 #include "nrf24l01_ll.h"
 #include "phy_driver.h"
@@ -1240,6 +1241,35 @@ void hal_comm_process(void)
 		break;
 
 	}
+}
+
+int hal_comm_poll(struct hal_pollfd *fds, int nfds)
+{
+	int pipeData;
+	int i;
+
+	pipeData = phy_ioctl(driverIndex, NRF24_CMD_GET_PIPE_W_DATA, NULL);
+	if (pipeData < 0)
+		return 0;
+
+	if (pipeData != 0 && mgmt.len_rx != 0){
+		if (fds[0].fd >= 0 && fds[0].events == POLLIN)
+			fds[0].revents = POLLIN;
+		else
+			fds[0].revents = 0;
+	}
+
+	for (i = 0; i < nfds; i++){
+		if (fds[i].fd < 0)
+			continue;
+
+		if (fds[i].events == POLLIN && pipeData == fds[i].fd)
+			fds[i].revents = POLLIN;
+		else
+			fds[i].revents = 0;
+	}
+
+	return 0;
 }
 
 int nrf24_str2mac(const char *str, struct nrf24_mac *mac)

@@ -121,3 +121,8 @@ void hal_comm_process(void)
 {
 
 }
+
+int hal_comm_poll(struct hal_pollfd *fds, int nfds)
+{
+	return -ENOSYS;
+}
