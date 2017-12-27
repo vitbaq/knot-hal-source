@@ -394,7 +394,11 @@ static int write_mgmt(int spi_fd)
 	return err;
 }
 
+#ifdef ARDUINO
 static int read_mgmt(int spi_fd)
+#else
+static int read_mgmt(int spi_fd, void *buffer)
+#endif
 {
 	struct nrf24_io_pack p;
 	struct nrf24_ll_mgmt_pdu *ipdu;
@@ -419,8 +423,11 @@ static int read_mgmt(int spi_fd)
 		return -EBUSY;
 
 	/* Event header structure */
+#ifdef ARDUINO
 	mgmtev_hdr = (struct mgmt_nrf24_header *) mgmt.buffer_rx;
-
+#else
+	mgmtev_hdr = (struct mgmt_nrf24_header *) buffer;
+#endif
 	switch (ipdu->type) {
 	/* If is a presente type */
 	case NRF24_PDU_TYPE_PRESENCE:
@@ -588,7 +595,11 @@ static int write_raw(int spi_fd, int sockfd)
 	return err;
 }
 
+#ifdef ARDUINO
 static int read_raw(int spi_fd)
+#else
+static int read_raw(int spi_fd, int sockfd)
+#endif
 {
 	struct nrf24_io_pack p;
 	const struct nrf24_ll_data_pdu *ipdu;
@@ -600,11 +611,14 @@ static int read_raw(int spi_fd)
 	size_t plen;
 	ssize_t ilen;
 	struct nrf24_data *peer;
-
+	int retval = 0;
 
 	memset(&p, 0, sizeof(p));
-
+#ifdef ARDUINO
 	p.pipe = NRF24_ANY_PIPE;
+#else
+	p.pipe = sockfd;
+#endif
 
 	ipdu = (void *) p.payload;
 
@@ -629,6 +643,9 @@ static int read_raw(int spi_fd)
 
 		/* If is Control */
 		case NRF24_PDU_LID_CONTROL:
+
+			retval = NRF24_PDU_LID_CONTROL;
+
 			llctrl = (struct nrf24_ll_crtl_pdu *)ipdu->payload;
 			llkeepalive = (struct nrf24_ll_keepalive *)
 							llctrl->payload;
@@ -664,11 +681,11 @@ static int read_raw(int spi_fd)
 				mgmt.len_rx = sizeof(*mgmtev_hdr) +
 							sizeof(*mgmtev_dc);
 			}
-
 			break;
 		/* If is Data */
 		case NRF24_PDU_LID_DATA_FRAG:
 		case NRF24_PDU_LID_DATA_END:
+			retval = NRF24_PDU_LID_DATA_FRAG;
 			/* Disabled? (Acceptor is always 0) */
 			if (peer->keepalive != 0)
 				/* Incoming data: reset keepalive counter */
@@ -709,16 +726,16 @@ static int read_raw(int spi_fd)
 			if (peer->offset_rx + plen > DATA_SIZE)
 				plen = DATA_SIZE - peer->offset_rx;
 
-			memcpy(peer->buffer_rx +
-				peer->offset_rx, ipdu->payload, plen);
+			memcpy(peer->buffer_rx + peer->offset_rx,
+							ipdu->payload, plen);
 			peer->offset_rx += plen;
 			peer->seqnumber_rx++;
 
 			/* If is DATA_END then put in rx buffer */
 			if (ipdu->lid == NRF24_PDU_LID_DATA_END) {
+				retval = NRF24_PDU_LID_DATA_END;
 				/* Sets packet length read */
 				peer->len_rx = peer->offset_rx;
-
 				/*
 				 * If the complete msg is received,
 				 * resets the controls
@@ -730,7 +747,7 @@ static int read_raw(int spi_fd)
 		}
 	}
 
-	return 0;
+	return retval;
 }
 
 /*
@@ -966,6 +983,7 @@ ssize_t hal_comm_read(int sockfd, void *buffer, size_t count)
 {
 	size_t length = 0;
 
+#ifdef ARDUINO
 	if (sockfd < 0 || sockfd > 5 || count == 0)
 		return -EINVAL;
 
@@ -1004,6 +1022,47 @@ ssize_t hal_comm_read(int sockfd, void *buffer, size_t count)
 
 	/* Returns the amount of bytes read */
 	return length;
+#else
+	struct nrf24_io_pack p;
+	int retval = -1;
+
+	p.pipe = sockfd;
+
+	if (p.pipe == 0) {
+		if (mgmt.len_rx != 0){
+			length = mgmt.len_rx > count ? count : mgmt.len_rx;
+			memcpy(buffer, mgmt.buffer_rx, mgmt.len_rx);
+		} else {
+			retval = read_mgmt(driverIndex, buffer);
+			if (retval < 0)
+				return retval;
+
+			length = mgmt.len_rx;
+		}
+		mgmt.len_rx = 0;
+	} else if (sockfd > 0 || sockfd < 5) {
+		retval = read_raw(driverIndex, sockfd);
+		switch (retval) {
+
+		case NRF24_PDU_LID_CONTROL:
+			length = 0;
+			break;
+		case NRF24_PDU_LID_DATA_FRAG:
+			length = -1;
+			break;
+		case NRF24_PDU_LID_DATA_END:
+			length = peers[sockfd-1].len_rx;
+			memcpy(buffer, peers[sockfd-1].buffer_rx,
+							peers[sockfd-1].len_rx);
+			peers[sockfd-1].len_rx = 0;
+			break;
+		}
+	} else {
+		return -EINVAL;
+	}
+
+	return length;
+#endif
 }
 
 ssize_t hal_comm_write(int sockfd, const void *buffer, size_t count)
@@ -1014,7 +1073,6 @@ ssize_t hal_comm_write(int sockfd, const void *buffer, size_t count)
 	/* If already has something to write then returns busy */
 	if (peers[sockfd-1].len_tx != 0)
 		return -EBUSY;
-
 	/* Copy data to be write in tx buffer */
 	memcpy(peers[sockfd-1].buffer_tx, buffer, count);
 	peers[sockfd-1].len_tx = count;
@@ -1155,10 +1213,10 @@ void hal_comm_process(void)
 		running_state = MGMT;
 		break;
 	case MGMT:
-
+#ifdef ARDUINO
 		read_mgmt(driverIndex);
+#endif
 		write_mgmt(driverIndex);
-
 		/* Broadcasting/acceptor */
 		if (listen)
 			presence_connect(driverIndex);
@@ -1192,9 +1250,9 @@ void hal_comm_process(void)
 			hal_timeout(hal_time_ms(), rt_stamp, (rt_offset)) > 0)
 				running_state = START_MGMT;
 		}
-
+#ifdef ARDUINO
 		read_raw(driverIndex);
-
+#endif
 		/* Check if pipe is allocated */
 		if (peers[sockIndex-1].pipe != -1) {
 			write_raw(driverIndex, sockIndex);

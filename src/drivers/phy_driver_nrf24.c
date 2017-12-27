@@ -63,6 +63,8 @@ static ssize_t nrf24l01_read(int spi_fd, void *buffer, size_t len)
 {
 	ssize_t length = 0;
 	struct nrf24_io_pack *p = (struct nrf24_io_pack *) buffer;
+
+#ifdef ARDUINO
 	uint8_t pipe;
 
 	/* If the pipe available */
@@ -73,7 +75,10 @@ static ssize_t nrf24l01_read(int spi_fd, void *buffer, size_t len)
 		/* Copy data to buffer */
 		length = nrf24l01_prx_data(spi_fd, p->payload, len);
 	}
-
+#else
+	if (nrf24l01_prx_pipe_available(spi_fd) == p->pipe)
+		length = nrf24l01_prx_data(spi_fd, p->payload, len);
+#endif
 	/*
 	 * On success, the number of bytes read is returned
 	 * Otherwise, 0 is returned.
