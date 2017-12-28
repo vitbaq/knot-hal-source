@@ -149,6 +149,9 @@ static uint8_t aa_pipe0[5] = {0x8D, 0xD9, 0xBE, 0x96, 0xDE};
 /* Global to save driver index */
 static int driverIndex = -1;
 
+/* Global to save irq gpio file descriptor */
+static int irq_gpio_fd = -1;
+
 /* Global to save adapter settings */
 static const struct nrf24_config *config;
 
@@ -838,7 +841,11 @@ int hal_comm_init(const char *pathname, const void *params)
 
 	config = (const struct nrf24_config *) params;
 	mac_local.address.uint64 = config->mac.address.uint64;
-
+#ifndef ARDUINO
+	irq_gpio_fd = phy_ioctl(driverIndex, NRF24_CMD_GET_GPIO_FD, NULL);
+	if (irq_gpio_fd < 0)
+		return -EPERM;
+#endif
 	/* Change default broadcasting channel */
 	if (config->channel > 0)
 		channel_mgmt.value = config->channel;
@@ -848,8 +855,11 @@ int hal_comm_init(const char *pathname, const void *params)
 		hal_getrandom(&ch, sizeof(ch));
 		channel_raw.value = ch % 125;
 	} while (channel_mgmt.value == channel_raw.value);
-
+#ifndef ARDUINO
+	return irq_gpio_fd;
+#else
 	return 0;
+#endif
 }
 
 int hal_comm_deinit(void)
