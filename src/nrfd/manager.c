@@ -28,6 +28,7 @@
 
 #include "nrf24l01_io.h"
 #include "hal/linux_log.h"
+#include "hal/poll.h"
 #include "manager.h"
 
 #define KNOTD_UNIX_ADDRESS		"knot"
@@ -38,9 +39,10 @@
 #define MIN(a,b)			(((a) < (b)) ? (a) : (b))
 #endif
 
+static int irqfd;
+static guint irqwatch;
 static int mgmtfd;
 static guint processwatch;
-static guint mgmtwatch;
 static guint dbus_id;
 static struct in_addr inet_address;
 static int tcp_port;
@@ -73,6 +75,15 @@ static struct peer peers[MAX_PEERS] = {
 	{.socket_fd = -1},
 	{.socket_fd = -1},
 	{.socket_fd = -1}
+};
+
+struct hal_pollfd poll_fds[6] = {
+	{.fd = -1, .events = 0, .revents = 0},
+	{.fd = -1, .events = 0, .revents = 0},
+	{.fd = -1, .events = 0, .revents = 0},
+	{.fd = -1, .events = 0, .revents = 0},
+	{.fd = -1, .events = 0, .revents = 0},
+	{.fd = -1, .events = 0, .revents = 0}
 };
 
 struct beacon {
@@ -636,10 +647,11 @@ static int8_t get_peer(struct nrf24_mac mac)
 {
 	int8_t i;
 
-	for (i = 0; i < MAX_PEERS; i++)
+	for (i = 0; i < MAX_PEERS; i++){
 		if (peers[i].socket_fd != -1 &&
 			peers[i].mac == mac.address.uint64)
 			return i;
+	}
 
 	return -EINVAL;
 }
@@ -854,12 +866,14 @@ done:
 			return sock;
 		}
 
+		poll_fds[position + 1].fd = nsk;
+		poll_fds[position + 1].events = POLLIN;
+
 		peers[position].ksock = sock;
 		peers[position].socket_fd = nsk;
 
 		/* Set mac value for this position */
-		peers[position].mac =
-				evt_pre->mac.address.uint64;
+		peers[position].mac = evt_pre->mac.address.uint64;
 
 		/* Watch knotd socket */
 		io = g_io_channel_unix_new(peers[position].ksock);
@@ -912,6 +926,10 @@ static int8_t evt_disconnected(struct mgmt_nrf24_header *mhdr)
 	if (position < 0)
 		return position;
 
+	poll_fds[position + 1].fd = -1;
+	poll_fds[position + 1].events = 0;
+	poll_fds[position + 1].revents = 0;
+
 	g_source_remove(peers[position].kwatch);
 	return 0;
 }
@@ -923,30 +941,28 @@ static gboolean process_idle(gpointer user_data)
 }
 
 /* Read RAW from Clients */
-static int8_t clients_read(void)
+static int8_t clients_read(int socket_fd)
 {
 	uint8_t buffer[256];
-	int rx, err, i;
-	static struct peer *p = peers;
+	int rx, err, i, position;
 
 	if (count_clients == 0)
 		return 0;
 
-	/* Handles clients found at a time */
-	for (i = MAX_PEERS; i != 0; --i) {
-		if (p->socket_fd != -1) {
-			rx = hal_comm_read(p->socket_fd, &buffer, sizeof(buffer));
-			if (rx > 0) {
-				if (write(p->ksock, buffer, rx) < 0) {
-					err = errno;
-					hal_log_error("write to knotd: %s(%d)",
-						      strerror(err), err);
-				}
-			}
-			i = 1; /* LOOP breaking */
+	for (i = 0; i < MAX_PEERS; i++){
+		if(peers[i].socket_fd == socket_fd)
+			position = i;
+	}
+
+	rx = hal_comm_read(socket_fd, &buffer, sizeof(buffer));
+	if (rx > 0) {
+		if (write(peers[position].ksock, buffer, rx) < 0) {
+			err = errno;
+			hal_log_error("write to knotd: %s(%d)",
+						     strerror(err), err);
 		}
-		if (++p == (peers + MAX_PEERS))
-			p = peers;
+	} else if (rx == 0) {
+		return 1;
 	}
 
 	return 0;
@@ -993,27 +1009,57 @@ static int8_t mgmt_read(void)
 	return 0;
 }
 
-static gboolean read_idle(gpointer user_data)
+static gboolean read_irq(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
 {
-	mgmt_read();
-	clients_read();
+	char data_dummy[10];
+	GError *gerr = NULL;
+	gsize rbytes;
+	int i, retval;
+	char mac_str[MAC_ADDRESS_SIZE];
+	char mac_str1[MAC_ADDRESS_SIZE];
 
+	if (!(cond & G_IO_PRI))
+		return FALSE;
+	g_io_channel_seek_position(io, 0, G_SEEK_SET, 0 );
+	g_io_channel_read_chars(io, data_dummy, sizeof(data_dummy)-1,
+								&rbytes, &gerr);
+
+	hal_comm_poll(poll_fds, 6);
+
+	if (poll_fds[0].revents == POLLIN)
+		mgmt_read();
+
+	for (i = 1; i < 6; i++){
+		if (poll_fds[i].revents == POLLIN){
+			retval = clients_read(poll_fds[i].fd);
+			if (retval == 1)
+				mgmt_read();
+		}
+	}
 	return TRUE;
+}
+
+static void read_irq_destroy(gpointer user_data)
+{
+	close(irqfd);
 }
 
 static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,
 						const struct nrf24_mac *mac)
 {
+	GIOCondition cond = G_IO_PRI | G_IO_ERR;
+	GIOChannel *io;
+
 	const struct nrf24_config config = {
 			.mac = *mac,
 			.channel = channel,
 			.name = "nrf0" };
-	int err;
 
-	err = hal_comm_init("NRF0", &config);
-	if (err < 0) {
-		hal_log_error("Cannot init NRF0 radio. (%d)", err);
-		return err;
+	irqfd = hal_comm_init("NRF0", &config);
+	if (irqfd < 0) {
+		hal_log_error("Cannot init NRF0 radio. (%d)", irqfd);
+		return irqfd;
 	}
 
 	mgmtfd = hal_comm_socket(HAL_COMM_PF_NRF24, HAL_COMM_PROTO_MGMT);
@@ -1022,9 +1068,21 @@ static int radio_init(const char *spi, uint8_t channel, uint8_t rfpwr,
 		goto done;
 	}
 
-	processwatch = g_idle_add(process_idle, NULL);
+	poll_fds[0].fd = mgmtfd;
+	poll_fds[0].events = POLLIN;
 
-	mgmtwatch = g_idle_add(read_idle, NULL);
+	io = g_io_channel_unix_new(irqfd);
+
+	irqwatch = g_io_add_watch_full(io,
+					G_PRIORITY_HIGH,
+					cond,
+					read_irq,
+					NULL,
+					read_irq_destroy);
+
+	g_io_channel_unref(io);
+
+	processwatch = g_idle_add(process_idle, NULL);
 	hal_log_info("Radio initialized");
 
 	return 0;
@@ -1038,6 +1096,10 @@ static void close_clients(void)
 {
 	int i;
 
+	poll_fds[0].fd = -1;
+	poll_fds[0].events = 0;
+	poll_fds[0].revents = 0;
+
 	for (i = 0; i < MAX_PEERS; i++) {
 		if (peers[i].socket_fd != -1)
 			g_source_remove(peers[i].kwatch);
@@ -1048,10 +1110,12 @@ static void radio_stop(void)
 {
 	close_clients();
 	hal_comm_close(mgmtfd);
-	if (mgmtwatch)
-		g_source_remove(mgmtwatch);
+
+	if (irqwatch)
+		g_source_remove(irqwatch);
 	if (processwatch)
 		g_source_remove(processwatch);
+
 	hal_comm_deinit();
 }
 
