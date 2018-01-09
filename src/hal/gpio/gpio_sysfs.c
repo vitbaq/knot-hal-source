@@ -115,6 +115,8 @@ static int gpio_direction(int pin, int dir)
 		/* Failed to set direction! */
 		err = errno;
 
+	close(fd);
+
 	return -err;
 }
 
