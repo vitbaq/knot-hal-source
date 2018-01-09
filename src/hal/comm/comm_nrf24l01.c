@@ -1321,20 +1321,20 @@ int hal_comm_poll(struct hal_pollfd *fds, int nfds)
 		return 0;
 
 	if (pipeData != 0 && mgmt.len_rx != 0){
-		if (fds[0].fd >= 0 && fds[0].events == POLLIN)
-			fds[0].revents = POLLIN;
+		if (fds[0].fd >= 0 && fds[0].events & POLLIN)
+			fds[0].revents |= POLLIN;
 		else
-			fds[0].revents = 0;
+			fds[0].revents &= ~POLLIN;
 	}
 
 	for (i = 0; i < nfds; i++){
 		if (fds[i].fd < 0)
 			continue;
 
-		if (fds[i].events == POLLIN && pipeData == fds[i].fd)
-			fds[i].revents = POLLIN;
+		if (fds[i].events & POLLIN && pipeData == fds[i].fd)
+			fds[i].revents |= POLLIN;
 		else
-			fds[i].revents = 0;
+			fds[i].revents &= ~POLLIN;
 	}
 
 	return 0;

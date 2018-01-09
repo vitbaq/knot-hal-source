@@ -1027,11 +1027,11 @@ static gboolean read_irq(GIOChannel *io, GIOCondition cond,
 
 	hal_comm_poll(poll_fds, 6);
 
-	if (poll_fds[0].revents == POLLIN)
+	if (poll_fds[0].revents & POLLIN)
 		mgmt_read();
 
 	for (i = 1; i < 6; i++){
-		if (poll_fds[i].revents == POLLIN){
+		if (poll_fds[i].revents & POLLIN){
 			retval = clients_read(poll_fds[i].fd);
 			if (retval == 1)
 				mgmt_read();
