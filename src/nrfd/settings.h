@@ -18,7 +18,8 @@ struct settings {
 	int channel;
 	int dbm;
 
-	int detach;
+	bool detach;
+	bool ell;
 } settings;
 
 int settings_parse(int argc, char *argv[], struct settings *settings);

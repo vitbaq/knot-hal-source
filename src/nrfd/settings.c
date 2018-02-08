@@ -7,14 +7,15 @@
  *
  */
 
-#include "settings.h"
-
+#include <stdbool.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
 
 #include <glib.h>
+
+#include "settings.h"
 
 static const char *config_path = "/etc/knot/gatewayConfig.json";
 static const char *nodes_path = "/etc/knot/keys.json";
@@ -23,61 +24,92 @@ static unsigned int port = 8081;
 static const char *spi = "/dev/spidev0.0";
 static int channel = -1;
 static int dbm = -255;
-static gboolean detach = TRUE;
+static bool detach = TRUE;
+static bool ell = FALSE;
 
-/*
- * OPTIONAL: describe the valid values ranges
- * for tx and channel
- */
+static void usage(void)
+{
+	printf("nrfd - nRF24l01 daemon\n"
+		"Usage:\n");
+	printf("\tnrfd [options]\n");
+	printf("Options:\n"
+		"\t-e, --ell          Use ELL instead of glib\n"
+		"\t-c, --config          Configuration file path\n"
+		"\t-f, --nodes          Known nodes file path\n"
+		"\t-h, --host          Host to forward KNoT\n"
+		"\t-p, --port          Remote port\n"
+		"\t-s, --spi          SPI device path\n"
+		"\t-C, --channel          Broadcast channel\n"
+		"\t-t, --tx          TX power: transmition signal strength in dBm\n"
+		"\t-n, --nodetach          Logging in foreground\n"
+		"\t-H, --help          Show help options\n");
+}
 
-static GOptionEntry options_spec[] = {
-
-	{ "config", 'c', 0, G_OPTION_ARG_STRING, &config_path,
-					"configuration file path", NULL },
-	{ "nodes", 'f', 0, G_OPTION_ARG_STRING, &nodes_path,
-					"nodes", "Known nodes file path" },
-	{ "host", 'h', 0, G_OPTION_ARG_STRING, &host,
-					"host", "Host to forward KNoT" },
-	{ "port", 'p', 0, G_OPTION_ARG_INT, &port,
-					"port", "Remote port" },
-	{ "spi", 'i', 0, G_OPTION_ARG_STRING, &spi,
-					"spi", "SPI device path" },
-	{ "channel", 'C', 0, G_OPTION_ARG_INT, &channel,
-					"channel", "Broadcast channel" },
-	{ "tx", 't', 0, G_OPTION_ARG_INT, &dbm,
-					"tx_power",
-		"TX power: transmition signal strength in dBm" },
-	{ "nodetach", 'n', G_OPTION_FLAG_REVERSE,
-					G_OPTION_ARG_NONE, &detach,
-					"Logging in foreground" },
-	{ NULL },
+static const struct option main_options[] = {
+	{ "ell",		no_argument,		NULL, 'e' },
+	{ "config",		required_argument,	NULL, 'c' },
+	{ "nodes",		required_argument,	NULL, 'f' },
+	{ "host",		required_argument,	NULL, 'h' },
+	{ "port",		required_argument,	NULL, 'p' },
+	{ "spi",		required_argument,	NULL, 's' },
+	{ "channel",		required_argument,	NULL, 'C' },
+	{ "tx",			required_argument,	NULL, 't' },
+	{ "nodetach",		no_argument,		NULL, 'n' },
+	{ "help",		no_argument,		NULL, 'H' },
+	{ }
 };
+
 
 static int parse_args(int argc, char *argv[], struct settings *settings)
 {
-	GOptionContext *context;
-	GError *gerr = NULL;
+	int ret = EXIT_FAILURE;
+	int opt;
 
-	context = g_option_context_new(NULL);
-	g_option_context_add_main_entries(context, options_spec, NULL);
+	for (;;) {
+		opt = getopt_long(argc, argv, "c:p:", main_options, NULL);
+		if (opt < 0)
+			break;
 
-	if (!g_option_context_parse(context, &argc, &argv, &gerr)) {
-		g_printerr("Invalid arguments: %s\n", gerr->message);
-		g_error_free(gerr);
-		g_option_context_free(context);
-		return EXIT_FAILURE;
+		switch (opt) {
+		case 'e':
+			settings->ell = TRUE;
+			break;
+		case 'c':
+			settings->config_path = optarg;
+			break;
+		case 'f':
+			settings->nodes_path = optarg;
+			break;
+		case 'h':
+			settings->host = optarg;
+			break;
+		case 'p':
+			settings->port = atoi(optarg);
+			break;
+		case 'i':
+			settings->spi = optarg;
+			break;
+		case 'C':
+			settings->channel = atoi(optarg);
+			break;
+		case 't':
+			settings->dbm = atoi(optarg);
+			break;
+		case 'n':
+			settings->detach = TRUE;
+			break;
+		case 'H':
+			usage();
+			return EXIT_SUCCESS;
+		default:
+			return EXIT_FAILURE;
+		}
 	}
 
-	g_option_context_free(context);
-
-	settings->config_path = config_path;
-	settings->nodes_path = nodes_path;
-	settings->host = host;
-	settings->port = port;
-	settings->spi = spi;
-	settings->channel = channel;
-	settings->dbm = dbm;
-	settings->detach = detach;
+	if (argc - optind > 0) {
+		fprintf(stderr, "Invalid command line parameters\n");
+		return EXIT_FAILURE;
+	}
 
 	return EXIT_SUCCESS;
 }
