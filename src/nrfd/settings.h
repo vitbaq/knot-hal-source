@@ -7,6 +7,8 @@
  *
  */
 
+#include <stdbool.h>
+
 struct settings {
 	const char *config_path;
 	const char *nodes_path;
