@@ -1,0 +1,10 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: NRF24_DRIVER
+Description: nRF24 linux driver
+Version: @VERSION@
+Libs: -L${libdir} -lnrf24-driver
+Cflags: -I${includedir}
